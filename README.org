@@ -9,3 +9,4 @@ $ uv tool install git+https://github.com/brettviren/teepeesee
 $ teepeesee display frame-file.npz
 #+end_example
 
+[[./teepeesee.png]]
