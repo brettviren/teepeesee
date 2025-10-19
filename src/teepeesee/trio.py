@@ -135,7 +135,7 @@ class TrioDisplay:
                     plane_data, 
                     aspect='auto', 
                     origin='lower', 
-                    interpolation='nearest',
+                    interpolation='none',
                     cmap='viridis'
                 )
                 # Set Y limits based on local channel index (0 to plane_size)
