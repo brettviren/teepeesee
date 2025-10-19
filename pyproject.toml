@@ -1,0 +1,18 @@
+[project]
+name = "teepeesee"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Brett Viren", email = "brett.viren@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3.0",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
