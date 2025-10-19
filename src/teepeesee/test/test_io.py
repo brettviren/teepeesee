@@ -9,7 +9,7 @@ from teepeesee.io import Data, Frame
 def sample_npz_file(tmp_path: Path) -> Path:
     """
     Generates a temporary NPZ file containing a single event trio.
-    Event number: 1, Tag: 'test'
+    Event number: 1, Tag: 'test'. Channels: 10.
     """
     event_num = 1
     tag = "test"
@@ -67,6 +67,32 @@ def sample_npz_file_apa(tmp_path: Path) -> Path:
     )
     return npz_path
 
+@pytest.fixture
+def sample_npz_file_100ch(tmp_path: Path) -> Path:
+    """
+    Generates a temporary NPZ file containing an event trio with 100 channels.
+    Event number: 20, Tag: '100ch_test'
+    """
+    event_num = 20
+    tag = "100ch_test"
+    N_CHANNELS = 100
+    N_TICKS = 100
+    
+    frame_name = f"frame_{tag}_{event_num}"
+    channels_name = f"channels_{tag}_{event_num}"
+    tickinfo_name = f"tickinfo_{tag}_{event_num}"
+
+    frame_data = np.zeros((N_CHANNELS, N_TICKS), dtype=np.float32)
+    channels_data = np.arange(N_CHANNELS, dtype=np.int32)
+    tickinfo_data = np.array([100, 50, 1], dtype=np.int32)
+
+    npz_path = tmp_path / "test_data_100ch.npz"
+    np.savez(
+        npz_path,
+        **{frame_name: frame_data, channels_name: channels_data, tickinfo_name: tickinfo_data}
+    )
+    return npz_path
+
 
 def test_data_initialization_and_length(sample_npz_file: Path):
     """Test if Data initializes correctly and finds the single event."""
@@ -112,6 +138,33 @@ def test_frame_detector_unknown(sample_npz_file: Path):
     
     assert frame.frame.shape[0] == 10
     assert frame.detector() == "det10"
+
+def test_frame_plane_sizes_known(sample_npz_file_apa: Path):
+    """Test plane size calculation for known detector (APA)."""
+    data = Data(str(sample_npz_file_apa))
+    frame: Frame = data[0]
+    
+    assert frame.detector() == "apa"
+    assert frame.plane_sizes() == [800, 800, 960]
+    assert sum(frame.plane_sizes()) == 2560
+
+def test_frame_plane_sizes_unknown_10ch(sample_npz_file: Path):
+    """Test plane size calculation for unknown detector (10 channels). 10/3 = 3 R 1. -> [3, 3, 4]"""
+    data = Data(str(sample_npz_file))
+    frame: Frame = data[0]
+    
+    assert frame.detector() == "det10"
+    assert frame.plane_sizes() == [3, 3, 4]
+    assert sum(frame.plane_sizes()) == 10
+
+def test_frame_plane_sizes_unknown_100ch(sample_npz_file_100ch: Path):
+    """Test plane size calculation for unknown detector (100 channels). 100/3 = 33 R 1. -> [33, 33, 34]"""
+    data = Data(str(sample_npz_file_100ch))
+    frame: Frame = data[0]
+    
+    assert frame.detector() == "det100"
+    assert frame.plane_sizes() == [33, 33, 34]
+    assert sum(frame.plane_sizes()) == 100
 
 
 def test_data_index_errors(sample_npz_file: Path):

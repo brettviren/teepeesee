@@ -1,0 +1,4 @@
+        if frame.shape[0] != channels.size():
+            raise ValueError("frame and channels array do not match")
+        if tickinfo.size() != 3:
+            raise ValueError("wrong size tickinfo")

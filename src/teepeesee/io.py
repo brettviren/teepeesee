@@ -7,14 +7,21 @@ _DETECTOR_MAP: Dict[int, str] = {
     2560: "apa",
 }
 
+# Lookup table for plane sizes based on detector name
+_PLANE_SIZES_MAP: Dict[str, List[int]] = {
+    "apa": [800, 800, 960],
+}
+
 class Frame:
     """Holds the trio of numpy arrays for a single event."""
     def __init__(self, frame: np.ndarray, channels: np.ndarray, tickinfo: np.ndarray, event_number: int):
         if len(frame.shape) != 2:
             raise ValueError("frame array must be 2D")
-        if frame.shape[0] != channels.size():
+        
+        # Corrected array size checks: use .size attribute for 1D arrays
+        if frame.shape[0] != channels.size:
             raise ValueError("frame and channels array do not match")
-        if tickinfo.size() != 3:
+        if tickinfo.size != 3:
             raise ValueError("wrong size tickinfo")
 
         self.frame = frame
@@ -31,6 +38,26 @@ class Frame:
         n_channels = self.frame.shape[0]
         
         return _DETECTOR_MAP.get(n_channels, f"det{n_channels}")
+
+    def plane_sizes(self) -> List[int]:
+        """
+        Returns the sizes of the three channel planes for the current detector.
+        If the detector is unknown, splits the total channel count into three 
+        approximately equal parts, giving the remainder to the third plane.
+        """
+        detector_name = self.detector()
+        
+        if detector_name in _PLANE_SIZES_MAP:
+            return _PLANE_SIZES_MAP[detector_name]
+        
+        # Handle unregistered detector: split channels into 3 approximately equal parts
+        n_channels = self.frame.shape[0]
+        
+        n1 = n_channels // 3
+        n2 = n_channels // 3
+        n3 = n_channels - n1 - n2 # n3 gets the remainder
+        
+        return [n1, n2, n3]
 
 
 class Data:
