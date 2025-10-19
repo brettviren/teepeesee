@@ -1,7 +1,7 @@
 import click
 import sys
 from .io import Data
-from .display import Display
+from .trio import TrioDisplay # Changed import
 import matplotlib.pyplot as plt
 
 # The version should ideally be read from package metadata.
@@ -20,7 +20,8 @@ def cli():
 @click.argument('npz_path', type=click.Path(exists=True))
 def display(npz_path):
     """
-    Display the first frame from the specified NPZ file interactively.
+    Display the first frame from the specified NPZ file interactively, 
+    split by detector plane.
     """
     try:
         data_source = Data(npz_path)
@@ -30,7 +31,8 @@ def display(npz_path):
             
         frame = data_source[0]
         
-        display_app = Display()
+        # Use TrioDisplay for plane separation
+        display_app = TrioDisplay()
         display_app.show(frame)
         
         # Keep the matplotlib window open and interactive
