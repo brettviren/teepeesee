@@ -1,6 +1,6 @@
 # Functions to read and write and otherwise deal with files. 
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 class Frame:
     """Holds the trio of numpy arrays for a single event."""
@@ -17,25 +17,37 @@ class Data:
     
     The arrays are grouped by event number based on the naming convention:
     category_tag_event_number (e.g., frame_*_1, channels_raw_1, tickinfo_foo_1).
+    
+    Data loading is performed lazily upon access via __getitem__.
     """
-    def __init__(self, npz_path: str):
-        self._data: Dict[int, Dict[str, np.ndarray]] = self._load_and_group_data(npz_path)
-        # Store event numbers sorted numerically to provide list interface ordering
-        self._event_numbers: List[int] = sorted(self._data.keys())
+    # Maps event number to a tuple of array names: (frame_name, channels_name, tickinfo_name)
+    _EventMap = Dict[int, Dict[str, str]]
 
-    def _load_and_group_data(self, npz_path: str) -> Dict[int, Dict[str, np.ndarray]]:
+    def __init__(self, npz_path: str):
+        self._npz_path = npz_path
+        self._event_map: Data._EventMap
+        self._event_numbers: List[int]
+        
+        self._event_map, self._event_numbers = self._parse_array_names(npz_path)
+
+    def _parse_array_names(self, npz_path: str) -> Tuple[_EventMap, List[int]]:
+        """Reads array names from the NPZ file and groups them by event number."""
         try:
+            # Load the file structure without loading data
             npz_file = np.load(npz_path)
+            array_names = npz_file.files
+            # Close the file handle immediately if np.load opened it, 
+            # although np.load usually returns an NpzFile object which manages access.
+            # We rely on accessing .files which doesn't load data.
         except FileNotFoundError:
             raise FileNotFoundError(f"NPZ file not found at {npz_path}")
         except Exception as e:
-            # Catch general numpy loading errors
-            raise IOError(f"Error loading NPZ file {npz_path}: {e}")
+            raise IOError(f"Error accessing NPZ file structure {npz_path}: {e}")
 
-        grouped_data: Dict[int, Dict[str, np.ndarray]] = {}
+        grouped_names: Dict[int, Dict[str, str]] = {}
         required_categories = {"frame", "channels", "tickinfo"}
 
-        for name in npz_file.files:
+        for name in array_names:
             # Expected format: category_tag_event_number
             parts = name.split('_')
             
@@ -53,26 +65,32 @@ class Data:
             except ValueError:
                 continue
 
-            if event_number not in grouped_data:
-                grouped_data[event_number] = {}
+            if event_number not in grouped_names:
+                grouped_names[event_number] = {}
             
-            # Store the array under its category name
-            grouped_data[event_number][category] = npz_file[name]
+            # Store the array name under its category
+            grouped_names[event_number][category] = name
 
         # Filter to ensure only complete trios are kept
-        valid_data = {}
-        for event_num, trio in grouped_data.items():
+        event_map: Data._EventMap = {}
+        for event_num, trio in grouped_names.items():
             if set(trio.keys()) == required_categories:
-                valid_data[event_num] = trio
+                event_map[event_num] = trio
 
-        return valid_data
+        # Store event numbers sorted numerically
+        event_numbers: List[int] = sorted(event_map.keys())
+        
+        return event_map, event_numbers
 
     def __len__(self) -> int:
         """Returns the number of complete event trios found."""
         return len(self._event_numbers)
 
     def __getitem__(self, index: int) -> Frame:
-        """Returns the Frame corresponding to the event at the given index."""
+        """
+        Returns the Frame corresponding to the event at the given index, 
+        loading the required arrays from the NPZ file.
+        """
         if not isinstance(index, int):
             raise TypeError("Index must be an integer")
         
@@ -80,11 +98,20 @@ class Data:
             raise IndexError("Index out of range")
 
         event_number = self._event_numbers[index]
-        trio = self._data[event_number]
+        name_map = self._event_map[event_number]
+        
+        # Load the specific arrays for this event
+        try:
+            with np.load(self._npz_path) as npz_file:
+                frame_array = npz_file[name_map["frame"]]
+                channels_array = npz_file[name_map["channels"]]
+                tickinfo_array = npz_file[name_map["tickinfo"]]
+        except Exception as e:
+            raise IOError(f"Error loading data for event {event_number} from {self._npz_path}: {e}")
         
         return Frame(
-            frame=trio["frame"],
-            channels=trio["channels"],
-            tickinfo=trio["tickinfo"],
+            frame=frame_array,
+            channels=channels_array,
+            tickinfo=tickinfo_array,
             event_number=event_number
         )
