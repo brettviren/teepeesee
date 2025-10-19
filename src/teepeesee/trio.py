@@ -174,6 +174,12 @@ class TrioDisplay:
         col = max(0, min(self._selected_col, N_ticks - 1))
         
         # --- Row Plot (Time profile for selected channel) ---
+        
+        # Save current X limits before clearing, as clearing resets limits even on shared axes
+        current_xlim = None
+        if not is_initial_setup and self._ax_row:
+            current_xlim = self._ax_row.get_xlim()
+            
         self._ax_row.clear()
         self._ax_row.set_title(f"Global Channel {global_row} Profile")
         self._ax_row.set_xlabel("Ticks")
@@ -182,9 +188,11 @@ class TrioDisplay:
         self._ax_row.plot(data[global_row, :], color='C0')
         self._ax_row.axvline(col, color='r', linestyle=':', linewidth=1)
         
-        # Only set X limits if initializing, otherwise preserve user zoom (shared axis)
+        # Restore or set initial X limits
         if is_initial_setup:
             self._ax_row.set_xlim(0, N_ticks)
+        elif current_xlim is not None:
+            self._ax_row.set_xlim(current_xlim)
             
         self._ax_row.autoscale_view(tight=True, scalex=False, scaley=True)
         
@@ -209,6 +217,11 @@ class TrioDisplay:
             # Local row index within this plane
             local_row = global_row - start_ch
             
+            # Save current Y limits for column plot before clearing
+            current_ylim = None
+            if not is_initial_setup and ax_col:
+                current_ylim = ax_col.get_ylim()
+                
             ax_col.clear()
             ax_col.set_title(f"Plane {i} Tick {col}")
             ax_col.set_xlabel("Amplitude")
@@ -216,9 +229,11 @@ class TrioDisplay:
             # Plot data[0:plane_size, col] against local channel index (0 to plane_size)
             ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}')
             
-            # Only set Y limits if initializing, otherwise preserve user zoom (shared axis)
+            # Restore or set initial Y limits
             if is_initial_setup:
                 ax_col.set_ylim(0, plane_size)
+            elif current_ylim is not None:
+                ax_col.set_ylim(current_ylim)
                 
             ax_col.autoscale_view(tight=True, scalex=True, scaley=False)
             ax_col.invert_xaxis() 
