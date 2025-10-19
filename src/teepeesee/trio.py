@@ -24,11 +24,14 @@ class TrioDisplay:
         self._ax_imgs: List[Optional[Axes]] = [None] * self.N_PLANES
         self._ax_cols: List[Optional[Axes]] = [None] * self.N_PLANES
         self._ax_row: Optional[Axes] = None
-        self._ax_controls: Optional[Axes] = None
+        
+        # Widget axes storage (defined using normalized coordinates)
+        self._ax_cmap: Optional[Axes] = None
+        self._ax_median: Optional[Axes] = None
         
         # Widget storage
         self._cmap_radio: Optional[RadioButtons] = None
-        self._median_check: Optional[Optional[CheckButtons]] = None
+        self._median_check: Optional[CheckButtons] = None
         
         # Handles for image data
         self._img_handles = [None] * self.N_PLANES
@@ -99,59 +102,39 @@ class TrioDisplay:
         for i in range(self.N_PLANES):
             self._ax_imgs[i].sharex(self._ax_row)
 
-        # 3. Setup Control Axis (Bottom right corner)
-        # We use the grid cell gs[self.N_PLANES, 1] for controls
-        self._ax_controls = self._fig.add_subplot(gs[self.N_PLANES, 1])
-        self._ax_controls.axis('off') # Hide the axis frame
+        # 3. Setup Control Widgets (Bottom right corner, outside the main grid layout)
         
-        # 4. Add Widgets using inset axes relative to the control area
+        # Define normalized coordinates for the control area (e.g., 75% to 95% width, 5% to 35% height)
         
-        # Colormap Radio Buttons (Top half of control area)
-        # We create a new axes object inside the control subplot area
-        ax_cmap = self._fig.add_axes(self._ax_controls.get_position(), zorder=1)
-        ax_cmap.set_position([
-            self._ax_controls.get_position().x0, 
-            self._ax_controls.get_position().y0 + 0.1, 
-            self._ax_controls.get_position().width, 
-            self._ax_controls.get_position().height * 0.5
-        ])
-        ax_cmap.set_title("Colormap", fontsize=10)
-        ax_cmap.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
+        # Colormap Radio Buttons
+        # [left, bottom, width, height]
+        self._ax_cmap = self._fig.add_axes([0.75, 0.15, 0.2, 0.2]) 
+        self._ax_cmap.set_title("Colormap", fontsize=10)
+        self._ax_cmap.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         
-        self._cmap_radio = RadioButtons(ax_cmap, self.AVAILABLE_CMAPS, active=0)
+        self._cmap_radio = RadioButtons(self._ax_cmap, self.AVAILABLE_CMAPS, active=0)
         self._cmap_radio.on_clicked(self._set_cmap)
         
-        # Median Subtraction Check Button (Bottom half of control area)
-        ax_median = self._fig.add_axes(self._ax_controls.get_position(), zorder=1)
-        ax_median.set_position([
-            self._ax_controls.get_position().x0, 
-            self._ax_controls.get_position().y0, 
-            self._ax_controls.get_position().width, 
-            self._ax_controls.get_position().height * 0.2
-        ])
-        ax_median.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
+        # Median Subtraction Check Button
+        self._ax_median = self._fig.add_axes([0.75, 0.05, 0.2, 0.05])
+        self._ax_median.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         
-        self._median_check = CheckButtons(ax_median, ['Subtract Median'], [False])
+        self._median_check = CheckButtons(self._ax_median, ['Subtract Median'], [False])
         self._median_check.on_clicked(self._toggle_median_subtraction)
         
         # Connect click event handler for cursor updates
         self._fig.canvas.mpl_connect('button_press_event', self._on_click)
         
-        self._fig.tight_layout()
-        # Adjust layout to prevent row plot from overlapping shared X labels
-        self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95)
-        
+        # Use subplots_adjust to ensure space is reserved for the widgets
+        self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.7, left=0.05)
+        # Note: We rely on the fixed normalized coordinates for the widgets now.
+
+
     def _set_cmap(self, label: str):
         """Callback to change the colormap."""
         self._current_cmap = label
         if self._current_frame:
-            # Only need to update image handles and redraw
-            for img_handle in self._img_handles:
-                if img_handle:
-                    img_handle.set_cmap(self._current_cmap)
-            
-            # Re-run update plots to ensure color limits are correct if data range changes
-            # (Although colormap change shouldn't change data range, it's safer to redraw)
+            # Re-run update plots to ensure color limits are correct and colormap is applied
             self._update_plots(self._current_frame)
 
     def _toggle_median_subtraction(self, label: str):
@@ -165,11 +148,12 @@ class TrioDisplay:
 
     def _get_processed_data(self, frame: Frame) -> np.ndarray:
         """Applies active data transformations to the frame data."""
-        data = frame.frame.copy()
+        
+        # Cast data to float before processing to avoid integer overflow/casting errors
+        data = frame.frame.astype(np.float64)
         
         if self._median_subtraction_active:
             # Calculate median for each row (channel)
-            # Note: This operation is performed on the entire frame array
             row_medians = np.median(data, axis=1, keepdims=True)
             # Subtract median from each row
             data -= row_medians
