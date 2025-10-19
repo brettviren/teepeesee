@@ -39,6 +39,10 @@ class TrioDisplay:
         self._img_handles = [None] * self.N_PLANES
         self._cbar_handles = [None] * self.N_PLANES
         
+        # Handles for 1D plots (Strategy 1 optimization)
+        self._row_line_handle = None
+        self._col_line_handles = [None] * self.N_PLANES
+        
         self._current_frame: Optional[Frame] = None
         self._plane_sizes: List[int] = []
         self._plane_offsets: List[int] = []
@@ -119,7 +123,6 @@ class TrioDisplay:
         # 3. Setup Control Widgets (Bottom right corner, using grid cell gs[3, 2])
         
         # Create a temporary axis for controls in the bottom right cell (gs[3, 2])
-        # We use this to get the normalized position of the grid cell
         ax_controls_placeholder = self._fig.add_subplot(gs[self.N_PLANES, 2])
         
         # Run tight_layout once to calculate positions accurately
@@ -353,27 +356,44 @@ class TrioDisplay:
         if not is_initial_setup and self._ax_row:
             current_xlim = self._ax_row.get_xlim()
             
-        self._ax_row.clear()
+        # Optimization: Avoid clearing if possible, update line data instead
+        if self._row_line_handle is None:
+            self._ax_row.clear()
+            self._row_line_handle, = self._ax_row.plot(data[global_row, :], color='C0')
+        else:
+            self._row_line_handle.set_ydata(data[global_row, :])
+            # We still need to update titles/labels/cursors, but avoid clearing the axis
+            
         self._ax_row.set_title(f"Global Channel {global_row} Profile")
         self._ax_row.set_xlabel("Ticks")
         self._ax_row.set_ylabel("Amplitude")
         
-        self._ax_row.plot(data[global_row, :], color='C0')
-        self._ax_row.axvline(col, color='r', linestyle=':', linewidth=1)
-        
-        # Restore or set initial X limits
+        # Update X limits and autoscale Y
         if is_initial_setup:
             self._ax_row.set_xlim(0, N_ticks)
         elif current_xlim is not None:
             self._ax_row.set_xlim(current_xlim)
             
+        # Re-evaluate limits based on new data
+        self._ax_row.relim()
         self._ax_row.autoscale_view(tight=True, scalex=False, scaley=True)
+        
+        # Handle vertical cursor on row plot (must be redrawn if axis wasn't cleared)
+        # Since we are avoiding ax.clear(), we need to manage the cursor line explicitly.
+        # For simplicity and robustness against autoscale, we will manage the cursor lines 
+        # in the loop below where we clear image cursors.
         
         # --- Column Plots (Channel profiles for selected tick) ---
         
-        # Clear previous cursors from image plots
+        # Clear previous cursors from image plots and row plot
+        for line in self._ax_row.lines:
+            if line is not self._row_line_handle:
+                line.remove()
+        self._ax_row.axvline(col, color='r', linestyle=':', linewidth=1)
+
+
         for ax_img in self._ax_imgs:
-            # Iterate and remove lines instead of calling .clear() on ArtistList
+            # Iterate and remove lines (cursors)
             for line in ax_img.lines:
                 line.remove()
             
@@ -395,12 +415,19 @@ class TrioDisplay:
             if not is_initial_setup and ax_col:
                 current_ylim = ax_col.get_ylim()
                 
-            ax_col.clear()
+            
+            # Optimization: Update line data instead of clearing
+            if self._col_line_handles[i] is None:
+                ax_col.clear()
+                # Plot data[0:plane_size, col] against local channel index (0 to plane_size)
+                self._col_line_handles[i], = ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}')
+            else:
+                # Update X data (amplitude) and Y data (channel index, which is constant)
+                self._col_line_handles[i].set_xdata(plane_data_col)
+                # Note: Y data (np.arange(plane_size)) is constant for a given plane size, no need to update
+            
             ax_col.set_title(f"Plane {i} Tick {col}")
             ax_col.set_xlabel("Amplitude")
-            
-            # Plot data[0:plane_size, col] against local channel index (0 to plane_size)
-            ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}')
             
             # Restore or set initial Y limits
             if is_initial_setup:
@@ -408,6 +435,8 @@ class TrioDisplay:
             elif current_ylim is not None:
                 ax_col.set_ylim(current_ylim)
                 
+            # Re-evaluate limits based on new data
+            ax_col.relim()
             ax_col.autoscale_view(tight=True, scalex=True, scaley=False)
             ax_col.invert_xaxis() 
             
