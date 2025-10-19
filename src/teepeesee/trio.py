@@ -116,19 +116,40 @@ class TrioDisplay:
         for i in range(self.N_PLANES):
             self._ax_imgs[i].sharex(self._ax_row)
 
-        # 3. Setup Control Widgets (Bottom right corner, using fixed normalized coordinates)
+        # 3. Setup Control Widgets (Bottom right corner, using grid cell gs[3, 2])
         
-        # Colormap Radio Buttons
-        # [left, bottom, width, height]
-        self._ax_cmap = self._fig.add_axes([0.75, 0.15, 0.2, 0.2]) 
+        # Create a temporary axis for controls in the bottom right cell (gs[3, 2])
+        # We use this to get the normalized position of the grid cell
+        ax_controls_placeholder = self._fig.add_subplot(gs[self.N_PLANES, 2])
+        
+        # Run tight_layout once to calculate positions accurately
+        self._fig.tight_layout()
+        
+        # Get the position of the target grid cell
+        control_pos = ax_controls_placeholder.get_position()
+        ax_controls_placeholder.remove() # Remove placeholder axis
+        
+        # Colormap Radio Buttons (Top part of control cell)
+        # [left, bottom, width, height] relative to figure
+        self._ax_cmap = self._fig.add_axes([
+            control_pos.x0, 
+            control_pos.y0 + control_pos.height * 0.3, 
+            control_pos.width, 
+            control_pos.height * 0.6
+        ]) 
         self._ax_cmap.set_title("Colormap", fontsize=10)
         self._ax_cmap.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         
         self._cmap_radio = RadioButtons(self._ax_cmap, self.AVAILABLE_CMAPS, active=0)
         self._cmap_radio.on_clicked(self._set_cmap)
         
-        # Median Subtraction Check Button
-        self._ax_median = self._fig.add_axes([0.75, 0.05, 0.2, 0.05])
+        # Median Subtraction Check Button (Bottom part of control cell)
+        self._ax_median = self._fig.add_axes([
+            control_pos.x0, 
+            control_pos.y0, 
+            control_pos.width, 
+            control_pos.height * 0.2
+        ])
         self._ax_median.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         
         self._median_check = CheckButtons(self._ax_median, ['Subtract Median'], [False])
@@ -137,7 +158,7 @@ class TrioDisplay:
         # Connect click event handler for cursor updates
         self._fig.canvas.mpl_connect('button_press_event', self._on_click)
         
-        # Adjust layout to reserve space for controls and colorbars
+        # Final adjustment to ensure widgets are visible and aligned
         self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95, left=0.05)
         
     def _set_cmap(self, label: str):
