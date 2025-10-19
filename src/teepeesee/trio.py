@@ -209,9 +209,17 @@ class TrioDisplay:
 
         self._fig.suptitle(f"Frame {frame.event_number} ({frame.detector()})", fontsize=14)
 
-        # 1. Update Image Plots and Colorbars
-        global_min = data.min()
-        global_max = data.max()
+        # Determine color limits based on processing state
+        if self._median_subtraction_active:
+            # Symmetric limits around zero
+            max_abs = np.max(np.abs(data))
+            vmin = -max_abs
+            vmax = max_abs
+        else:
+            # Standard min/max limits
+            vmin = data.min()
+            vmax = data.max()
+        
         
         for i in range(self.N_PLANES):
             start_ch = self._plane_offsets[i]
@@ -230,8 +238,8 @@ class TrioDisplay:
                     origin='lower', 
                     interpolation='none',
                     cmap=self._current_cmap,
-                    vmin=global_min,
-                    vmax=global_max
+                    vmin=vmin,
+                    vmax=vmax
                 )
                 
                 # Set initial limits
@@ -252,9 +260,9 @@ class TrioDisplay:
                 self._img_handles[i].set_cmap(self._current_cmap)
                 
                 # If the data processing changed (e.g., median subtraction toggled), 
-                # reset color limits to the new global min/max, otherwise preserve user zoom.
+                # reset color limits to the calculated vmin/vmax, otherwise preserve user zoom.
                 if self._median_subtraction_active or is_initial_setup:
-                    self._img_handles[i].set_clim(global_min, global_max)
+                    self._img_handles[i].set_clim(vmin, vmax)
                 
                 # Update colorbar to reflect changes in image data/limits
                 self._cbar_handles[i].update_normal(self._img_handles[i])
@@ -331,13 +339,19 @@ class TrioDisplay:
             cbar_handle.update_normal(img_handle)
             self._fig.canvas.draw_idle()
 
-        elif event.button == 3: # Right click: Reset to global min/max
+        elif event.button == 3: # Right click: Reset to calculated limits (symmetric or min/max)
             if self._current_frame:
                 data = self._get_processed_data(self._current_frame)
-                global_min = data.min()
-                global_max = data.max()
                 
-                img_handle.set_clim(global_min, global_max)
+                if self._median_subtraction_active:
+                    max_abs = np.max(np.abs(data))
+                    reset_vmin = -max_abs
+                    reset_vmax = max_abs
+                else:
+                    reset_vmin = data.min()
+                    reset_vmax = data.max()
+                
+                img_handle.set_clim(reset_vmin, reset_vmax)
                 cbar_handle.update_normal(img_handle)
                 self._fig.canvas.draw_idle()
 
