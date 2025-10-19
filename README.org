@@ -1,6 +1,6 @@
 #+title: teepeesee - a display of Wire-Cell frame files
 
-This was written by me and Gemini in about three hours during a sleepless night.
+This was written by me and Gemini with the help of aider in about three hours during a sleepless night.
 
 Usage:
 
@@ -9,4 +9,14 @@ $ uv tool install git+https://github.com/brettviren/teepeesee
 $ teepeesee display frame-file.npz
 #+end_example
 
+Zoom, select color scale, apply data transforms.
+
 [[./teepeesee.png]]
+
+
+Maybe future:
+
+- [ ] Navigate to different frames.
+- [ ] Figure out better GUI controls.
+- [ ] Save / restore zoom / pick state.
+    
