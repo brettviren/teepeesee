@@ -10,6 +10,13 @@ _DETECTOR_MAP: Dict[int, str] = {
 class Frame:
     """Holds the trio of numpy arrays for a single event."""
     def __init__(self, frame: np.ndarray, channels: np.ndarray, tickinfo: np.ndarray, event_number: int):
+        if len(frame.shape) != 2:
+            raise ValueError("frame array must be 2D")
+        if frame.shape[0] != channels.size():
+            raise ValueError("frame and channels array do not match")
+        if tickinfo.size() != 3:
+            raise ValueError("wrong size tickinfo")
+
         self.frame = frame
         self.channels = channels
         self.tickinfo = tickinfo
@@ -20,9 +27,6 @@ class Frame:
         Returns the detector name based on the number of channels (rows in the frame array).
         If the channel count is unknown, returns "det<channel_count>".
         """
-        if self.frame.ndim < 2:
-            # Handle case where frame might not be 2D, although typically it should be (channels, ticks)
-            return f"det{self.frame.size}"
             
         n_channels = self.frame.shape[0]
         
