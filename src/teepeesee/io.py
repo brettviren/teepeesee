@@ -30,21 +30,21 @@ class Frame:
         self.event_number = event_number
 
     @property
-    def tstart():
+    def tstart(self):
         '''
         The start time of the original IFrame (see .tbin) 
         '''
         return self.tickinfo[0]
 
     @property
-    def tick():
+    def tick(self):
         '''
         The sample period time in WCT system of units.
         '''
         return self.tickinfo[1]
 
     @property
-    def tbin():
+    def tbin(self):
         '''
         How many samples between the start time and the first column of the frame array.
         '''
