@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.widgets import RadioButtons, CheckButtons
 from typing import List, Optional, Tuple, Dict
 
 # Assuming Frame is importable from teepeesee.io
@@ -11,18 +12,23 @@ class TrioDisplay:
     """
     Provides an interactive display for Frame data, splitting the visualization
     into three separate channel planes for independent scaling and zooming.
+    Includes GUI widgets for control.
     """
     N_PLANES = 3
+    AVAILABLE_CMAPS = ["viridis", "seismic", "rainbow"]
 
     def __init__(self):
         self._fig: Optional[Figure] = None
         
-        # Axes storage: [ax_img_0, ax_img_1, ax_img_2]
+        # Axes storage
         self._ax_imgs: List[Optional[Axes]] = [None] * self.N_PLANES
-        # Axes storage: [ax_col_0, ax_col_1, ax_col_2]
         self._ax_cols: List[Optional[Axes]] = [None] * self.N_PLANES
-        # Single row profile axis
         self._ax_row: Optional[Axes] = None
+        self._ax_controls: Optional[Axes] = None
+        
+        # Widget storage
+        self._cmap_radio: Optional[RadioButtons] = None
+        self._median_check: Optional[CheckButtons] = None
         
         # Handles for image data
         self._img_handles = [None] * self.N_PLANES
@@ -31,12 +37,16 @@ class TrioDisplay:
         self._plane_sizes: List[int] = []
         self._plane_offsets: List[int] = []
         
+        # State variables for controls
+        self._current_cmap: str = self.AVAILABLE_CMAPS[0]
+        self._median_subtraction_active: bool = False
+        
         # Global indices for selected point
         self._selected_global_row: int = 0
         self._selected_col: int = 0
 
     def _setup_figure(self, plane_sizes: List[int]):
-        """Initializes the figure and axes layout with proportional heights."""
+        """Initializes the figure and axes layout with proportional heights and controls."""
         if self._fig is not None:
             # Figure already exists, reuse it
             return
@@ -81,7 +91,6 @@ class TrioDisplay:
             ax_col.set_xlabel("Amplitude")
 
         # 2. Setup Row Axis (Bottom row, spans ONLY the first column)
-        # Change gs[self.N_PLANES, :] to gs[self.N_PLANES, 0]
         self._ax_row = self._fig.add_subplot(gs[self.N_PLANES, 0])
         self._ax_row.set_xlabel("Ticks")
         self._ax_row.set_ylabel("Amplitude")
@@ -90,17 +99,69 @@ class TrioDisplay:
         for i in range(self.N_PLANES):
             self._ax_imgs[i].sharex(self._ax_row)
 
-        # Connect click event handler
+        # 3. Setup Control Axis (Bottom right corner)
+        self._ax_controls = self._fig.add_subplot(gs[self.N_PLANES, 1])
+        self._ax_controls.axis('off') # Hide the axis frame
+
+        # 4. Add Widgets
+        
+        # Colormap Radio Buttons
+        # Create a small axis for the radio buttons within the control area
+        ax_cmap = self._fig.add_axes([0.75, 0.1, 0.2, 0.2]) # [left, bottom, width, height] normalized
+        ax_cmap.set_title("Colormap", fontsize=10)
+        
+        self._cmap_radio = RadioButtons(ax_cmap, self.AVAILABLE_CMAPS, active=0)
+        self._cmap_radio.on_clicked(self._set_cmap)
+        
+        # Median Subtraction Check Button
+        ax_median = self._fig.add_axes([0.75, 0.35, 0.2, 0.05])
+        self._median_check = CheckButtons(ax_median, ['Subtract Median'], [False])
+        self._median_check.on_clicked(self._toggle_median_subtraction)
+        
+        # Connect click event handler for cursor updates
         self._fig.canvas.mpl_connect('button_press_event', self._on_click)
         
         self._fig.tight_layout()
         # Adjust layout to prevent row plot from overlapping shared X labels
-        self._fig.subplots_adjust(bottom=0.1, top=0.95)
+        self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95)
+        
+    def _set_cmap(self, label: str):
+        """Callback to change the colormap."""
+        self._current_cmap = label
+        if self._current_frame:
+            # Only need to update image handles and redraw
+            for img_handle in self._img_handles:
+                if img_handle:
+                    img_handle.set_cmap(self._current_cmap)
+            self._fig.canvas.draw_idle()
 
+    def _toggle_median_subtraction(self, label: str):
+        """Callback to toggle median subtraction."""
+        # CheckButtons pass the label, we need to check the state
+        self._median_subtraction_active = self._median_check.get_status()[0]
+        
+        if self._current_frame:
+            # Re-process and redraw all data
+            self._update_plots(self._current_frame)
+
+    def _get_processed_data(self, frame: Frame) -> np.ndarray:
+        """Applies active data transformations to the frame data."""
+        data = frame.frame.copy()
+        
+        if self._median_subtraction_active:
+            # Calculate median for each row (channel)
+            row_medians = np.median(data, axis=1, keepdims=True)
+            # Subtract median from each row
+            data -= row_medians
+            
+        return data
 
     def _update_plots(self, frame: Frame):
         """Updates all plots based on the current frame data."""
-        data = frame.frame
+        
+        # Get processed data (potentially median subtracted)
+        data = self._get_processed_data(frame)
+        
         N_channels, N_ticks = data.shape
         
         self._plane_sizes = frame.plane_sizes()
@@ -140,7 +201,7 @@ class TrioDisplay:
                     aspect='auto', 
                     origin='lower', 
                     interpolation='none',
-                    cmap='viridis'
+                    cmap=self._current_cmap
                 )
                 # Set initial Y limits based on local channel index (0 to plane_size)
                 ax_img.set_ylim(0, self._plane_sizes[i])
@@ -152,8 +213,9 @@ class TrioDisplay:
                 ax_col.set_ylim(0, self._plane_sizes[i])
                 
             else:
-                # Subsequent draw: update data
+                # Subsequent draw: update data and colormap if needed
                 self._img_handles[i].set_data(plane_data)
+                self._img_handles[i].set_cmap(self._current_cmap)
                 
             # Ensure color limits are consistent across all planes
             self._img_handles[i].set_clim(global_min, global_max)
@@ -307,7 +369,8 @@ class TrioDisplay:
             self._selected_col = new_col
             
             # When clicking, we are updating the cursor position, not initializing the figure.
-            self._update_1d_plots(data, N_channels, N_ticks, is_initial_setup=False)
+            # We pass the original frame, but _update_1d_plots uses the processed data.
+            self._update_1d_plots(self._get_processed_data(self._current_frame), N_channels, N_ticks, is_initial_setup=False)
 
     def show(self, frame: Frame):
         """
