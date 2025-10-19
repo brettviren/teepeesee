@@ -28,7 +28,7 @@ class TrioDisplay:
         
         # Widget storage
         self._cmap_radio: Optional[RadioButtons] = None
-        self._median_check: Optional[CheckButtons] = None
+        self._median_check: Optional[Optional[CheckButtons]] = None
         
         # Handles for image data
         self._img_handles = [None] * self.N_PLANES
@@ -100,21 +100,37 @@ class TrioDisplay:
             self._ax_imgs[i].sharex(self._ax_row)
 
         # 3. Setup Control Axis (Bottom right corner)
+        # We use the grid cell gs[self.N_PLANES, 1] for controls
         self._ax_controls = self._fig.add_subplot(gs[self.N_PLANES, 1])
         self._ax_controls.axis('off') # Hide the axis frame
-
-        # 4. Add Widgets
         
-        # Colormap Radio Buttons
-        # Create a small axis for the radio buttons within the control area
-        ax_cmap = self._fig.add_axes([0.75, 0.1, 0.2, 0.2]) # [left, bottom, width, height] normalized
+        # 4. Add Widgets using inset axes relative to the control area
+        
+        # Colormap Radio Buttons (Top half of control area)
+        # We create a new axes object inside the control subplot area
+        ax_cmap = self._fig.add_axes(self._ax_controls.get_position(), zorder=1)
+        ax_cmap.set_position([
+            self._ax_controls.get_position().x0, 
+            self._ax_controls.get_position().y0 + 0.1, 
+            self._ax_controls.get_position().width, 
+            self._ax_controls.get_position().height * 0.5
+        ])
         ax_cmap.set_title("Colormap", fontsize=10)
+        ax_cmap.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         
         self._cmap_radio = RadioButtons(ax_cmap, self.AVAILABLE_CMAPS, active=0)
         self._cmap_radio.on_clicked(self._set_cmap)
         
-        # Median Subtraction Check Button
-        ax_median = self._fig.add_axes([0.75, 0.35, 0.2, 0.05])
+        # Median Subtraction Check Button (Bottom half of control area)
+        ax_median = self._fig.add_axes(self._ax_controls.get_position(), zorder=1)
+        ax_median.set_position([
+            self._ax_controls.get_position().x0, 
+            self._ax_controls.get_position().y0, 
+            self._ax_controls.get_position().width, 
+            self._ax_controls.get_position().height * 0.2
+        ])
+        ax_median.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
+        
         self._median_check = CheckButtons(ax_median, ['Subtract Median'], [False])
         self._median_check.on_clicked(self._toggle_median_subtraction)
         
@@ -133,7 +149,10 @@ class TrioDisplay:
             for img_handle in self._img_handles:
                 if img_handle:
                     img_handle.set_cmap(self._current_cmap)
-            self._fig.canvas.draw_idle()
+            
+            # Re-run update plots to ensure color limits are correct if data range changes
+            # (Although colormap change shouldn't change data range, it's safer to redraw)
+            self._update_plots(self._current_frame)
 
     def _toggle_median_subtraction(self, label: str):
         """Callback to toggle median subtraction."""
@@ -150,6 +169,7 @@ class TrioDisplay:
         
         if self._median_subtraction_active:
             # Calculate median for each row (channel)
+            # Note: This operation is performed on the entire frame array
             row_medians = np.median(data, axis=1, keepdims=True)
             # Subtract median from each row
             data -= row_medians
@@ -369,8 +389,9 @@ class TrioDisplay:
             self._selected_col = new_col
             
             # When clicking, we are updating the cursor position, not initializing the figure.
-            # We pass the original frame, but _update_1d_plots uses the processed data.
-            self._update_1d_plots(self._get_processed_data(self._current_frame), N_channels, N_ticks, is_initial_setup=False)
+            # We pass the processed data to _update_1d_plots.
+            processed_data = self._get_processed_data(self._current_frame)
+            self._update_1d_plots(processed_data, N_channels, N_ticks, is_initial_setup=False)
 
     def show(self, frame: Frame):
         """
