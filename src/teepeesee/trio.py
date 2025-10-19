@@ -182,8 +182,9 @@ class TrioDisplay:
         
         # Clear previous cursors from image plots
         for ax_img in self._ax_imgs:
-            # Remove all lines (cursors)
-            ax_img.lines.clear()
+            # FIX: Iterate and remove lines instead of calling .clear() on ArtistList
+            for line in ax_img.lines:
+                line.remove()
             
         
         for i in range(self.N_PLANES):
