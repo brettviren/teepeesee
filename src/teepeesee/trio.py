@@ -80,8 +80,9 @@ class TrioDisplay:
             ax_img.set_ylabel(f"Plane {i} Channels")
             ax_col.set_xlabel("Amplitude")
 
-        # 2. Setup Row Axis (Bottom row, spans 2 columns)
-        self._ax_row = self._fig.add_subplot(gs[self.N_PLANES, :])
+        # 2. Setup Row Axis (Bottom row, spans ONLY the first column)
+        # Change gs[self.N_PLANES, :] to gs[self.N_PLANES, 0]
+        self._ax_row = self._fig.add_subplot(gs[self.N_PLANES, 0])
         self._ax_row.set_xlabel("Ticks")
         self._ax_row.set_ylabel("Amplitude")
         
