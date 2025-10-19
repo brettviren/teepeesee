@@ -29,6 +29,27 @@ class Frame:
         self.tickinfo = tickinfo
         self.event_number = event_number
 
+    @property
+    def tstart():
+        '''
+        The start time of the original IFrame (see .tbin) 
+        '''
+        return self.tickinfo[0]
+
+    @property
+    def tick():
+        '''
+        The sample period time in WCT system of units.
+        '''
+        return self.tickinfo[1]
+
+    @property
+    def tbin():
+        '''
+        How many samples between the start time and the first column of the frame array.
+        '''
+        return self.tickinfo[2]
+
     def detector(self) -> str:
         """
         Returns the detector name based on the number of channels (rows in the frame array).
