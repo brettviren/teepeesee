@@ -90,9 +90,13 @@ def test_data_incomplete_trio(tmp_path: Path):
     npz_path = tmp_path / "incomplete.npz"
     np.savez(
         npz_path,
+        # Complete trio for event 1
         frame_test_1=np.zeros((1,1)),
         channels_test_1=np.zeros((1,)),
-        frame_test_2=np.zeros((1,1)) # Missing channels and tickinfo for event 2
+        tickinfo_test_1=np.zeros((3,)), # Now complete
+        
+        # Incomplete trio for event 2 (missing channels and tickinfo)
+        frame_test_2=np.zeros((1,1)) 
     )
     
     data = Data(str(npz_path))
