@@ -2,6 +2,11 @@
 import numpy as np
 from typing import Dict, List, Tuple
 
+# Lookup table for detector names based on the number of channels (rows in frame array)
+_DETECTOR_MAP: Dict[int, str] = {
+    2560: "apa",
+}
+
 class Frame:
     """Holds the trio of numpy arrays for a single event."""
     def __init__(self, frame: np.ndarray, channels: np.ndarray, tickinfo: np.ndarray, event_number: int):
@@ -9,6 +14,20 @@ class Frame:
         self.channels = channels
         self.tickinfo = tickinfo
         self.event_number = event_number
+
+    def detector(self) -> str:
+        """
+        Returns the detector name based on the number of channels (rows in the frame array).
+        If the channel count is unknown, returns "det<channel_count>".
+        """
+        if self.frame.ndim < 2:
+            # Handle case where frame might not be 2D, although typically it should be (channels, ticks)
+            return f"det{self.frame.size}"
+            
+        n_channels = self.frame.shape[0]
+        
+        return _DETECTOR_MAP.get(n_channels, f"det{n_channels}")
+
 
 class Data:
     """

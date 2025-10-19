@@ -41,6 +41,33 @@ def sample_npz_file(tmp_path: Path) -> Path:
 
     return npz_path
 
+@pytest.fixture
+def sample_npz_file_apa(tmp_path: Path) -> Path:
+    """
+    Generates a temporary NPZ file containing an APA event trio (2560 channels).
+    Event number: 10, Tag: 'apa_test'
+    """
+    event_num = 10
+    tag = "apa_test"
+    N_CHANNELS = 2560
+    N_TICKS = 100
+    
+    frame_name = f"frame_{tag}_{event_num}"
+    channels_name = f"channels_{tag}_{event_num}"
+    tickinfo_name = f"tickinfo_{tag}_{event_num}"
+
+    frame_data = np.zeros((N_CHANNELS, N_TICKS), dtype=np.float32)
+    channels_data = np.arange(N_CHANNELS, dtype=np.int32)
+    tickinfo_data = np.array([100, 50, 1], dtype=np.int32)
+
+    npz_path = tmp_path / "test_data_apa.npz"
+    np.savez(
+        npz_path,
+        **{frame_name: frame_data, channels_name: channels_data, tickinfo_name: tickinfo_data}
+    )
+    return npz_path
+
+
 def test_data_initialization_and_length(sample_npz_file: Path):
     """Test if Data initializes correctly and finds the single event."""
     data = Data(str(sample_npz_file))
@@ -69,6 +96,23 @@ def test_data_getitem_and_lazy_loading(sample_npz_file: Path):
     assert np.array_equal(frame.frame, expected_frame_data)
     assert np.array_equal(frame.channels, np.arange(10, dtype=np.int32))
     assert frame.tickinfo[0] == 100
+
+def test_frame_detector_known(sample_npz_file_apa: Path):
+    """Test detector identification for a known channel count (APA)."""
+    data = Data(str(sample_npz_file_apa))
+    frame: Frame = data[0]
+    
+    assert frame.frame.shape[0] == 2560
+    assert frame.detector() == "apa"
+
+def test_frame_detector_unknown(sample_npz_file: Path):
+    """Test detector identification for an unknown channel count (10)."""
+    data = Data(str(sample_npz_file))
+    frame: Frame = data[0]
+    
+    assert frame.frame.shape[0] == 10
+    assert frame.detector() == "det10"
+
 
 def test_data_index_errors(sample_npz_file: Path):
     """Test boundary conditions for indexing."""
