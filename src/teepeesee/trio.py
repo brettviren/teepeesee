@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import RadioButtons, CheckButtons
+from matplotlib.colors import Normalize
 from typing import List, Optional, Tuple, Dict
 
 # Assuming Frame is importable from teepeesee.io
@@ -12,7 +13,7 @@ class TrioDisplay:
     """
     Provides an interactive display for Frame data, splitting the visualization
     into three separate channel planes for independent scaling and zooming.
-    Includes GUI widgets for control.
+    Includes GUI widgets for control and interactive colorbars.
     """
     N_PLANES = 3
     AVAILABLE_CMAPS = ["viridis", "seismic", "rainbow"]
@@ -23,9 +24,10 @@ class TrioDisplay:
         # Axes storage
         self._ax_imgs: List[Optional[Axes]] = [None] * self.N_PLANES
         self._ax_cols: List[Optional[Axes]] = [None] * self.N_PLANES
+        self._ax_cbars: List[Optional[Axes]] = [None] * self.N_PLANES # New axes for colorbars
         self._ax_row: Optional[Axes] = None
         
-        # Widget axes storage (defined using normalized coordinates)
+        # Widget axes storage
         self._ax_cmap: Optional[Axes] = None
         self._ax_median: Optional[Axes] = None
         
@@ -33,8 +35,9 @@ class TrioDisplay:
         self._cmap_radio: Optional[RadioButtons] = None
         self._median_check: Optional[CheckButtons] = None
         
-        # Handles for image data
+        # Handles for image data and colorbars
         self._img_handles = [None] * self.N_PLANES
+        self._cbar_handles = [None] * self.N_PLANES
         
         self._current_frame: Optional[Frame] = None
         self._plane_sizes: List[int] = []
@@ -54,32 +57,35 @@ class TrioDisplay:
             # Figure already exists, reuse it
             return
 
-        self._fig = plt.figure(figsize=(12, 10))
+        self._fig = plt.figure(figsize=(14, 10)) # Increased width for colorbars
         
         # Height ratios: [Plane 0 size, Plane 1 size, Plane 2 size, Row Plot size]
         total_channels = sum(plane_sizes)
-        
-        # Row plot height is fixed relative to the total channel height (e.g., 20%)
         height_ratios = [size for size in plane_sizes] + [total_channels / 5] 
         
-        # Define grid structure: 4 rows (3 planes + 1 row plot), 2 columns (Image + Column Profile)
+        # Define grid structure: 4 rows, 3 columns (Image | Colorbar | Column Profile)
+        # Width ratios: [Image (3), Colorbar (0.2), Column Profile (1)]
         gs = self._fig.add_gridspec(
             self.N_PLANES + 1, 
-            2, 
-            width_ratios=[3, 1], 
+            3, 
+            width_ratios=[3, 0.2, 1], 
             height_ratios=height_ratios,
             hspace=0.05, # Minimal vertical space between plane images
-            wspace=0.3
+            wspace=0.1 # Reduced wspace to fit colorbars
         )
 
-        # 1. Setup Image and Column Axes (Planes 0, 1, 2)
+        # 1. Setup Image, Colorbar, and Column Axes (Planes 0, 1, 2)
         for i in range(self.N_PLANES):
-            # Image Axis (Left column, rows 0, 1, 2)
+            # Image Axis (Column 0)
             ax_img = self._fig.add_subplot(gs[i, 0])
             self._ax_imgs[i] = ax_img
             
-            # Column Profile Axis (Right column, rows 0, 1, 2)
-            ax_col = self._fig.add_subplot(gs[i, 1], sharey=ax_img)
+            # Colorbar Axis (Column 1)
+            ax_cbar = self._fig.add_subplot(gs[i, 1])
+            self._ax_cbars[i] = ax_cbar
+            
+            # Column Profile Axis (Column 2)
+            ax_col = self._fig.add_subplot(gs[i, 2], sharey=ax_img)
             self._ax_cols[i] = ax_col
             
             # Synchronization and cleanup
@@ -92,6 +98,14 @@ class TrioDisplay:
             
             ax_img.set_ylabel(f"Plane {i} Channels")
             ax_col.set_xlabel("Amplitude")
+            
+            # Hide ticks/labels on colorbar axis initially
+            ax_cbar.tick_params(labelleft=False, labelright=True, left=False, right=True)
+            
+            # Connect custom colorbar interaction handlers
+            ax_cbar.figure.canvas.mpl_connect('scroll_event', self._on_cbar_scroll)
+            ax_cbar.figure.canvas.mpl_connect('button_press_event', self._on_cbar_click)
+
 
         # 2. Setup Row Axis (Bottom row, spans ONLY the first column)
         self._ax_row = self._fig.add_subplot(gs[self.N_PLANES, 0])
@@ -102,9 +116,7 @@ class TrioDisplay:
         for i in range(self.N_PLANES):
             self._ax_imgs[i].sharex(self._ax_row)
 
-        # 3. Setup Control Widgets (Bottom right corner, outside the main grid layout)
-        
-        # Define normalized coordinates for the control area (e.g., 75% to 95% width, 5% to 35% height)
+        # 3. Setup Control Widgets (Bottom right corner, using fixed normalized coordinates)
         
         # Colormap Radio Buttons
         # [left, bottom, width, height]
@@ -125,25 +137,20 @@ class TrioDisplay:
         # Connect click event handler for cursor updates
         self._fig.canvas.mpl_connect('button_press_event', self._on_click)
         
-        # Use subplots_adjust to ensure space is reserved for the widgets
-        self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.7, left=0.05)
-        # Note: We rely on the fixed normalized coordinates for the widgets now.
-
-
+        # Adjust layout to reserve space for controls and colorbars
+        self._fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95, left=0.05)
+        
     def _set_cmap(self, label: str):
         """Callback to change the colormap."""
         self._current_cmap = label
         if self._current_frame:
-            # Re-run update plots to ensure color limits are correct and colormap is applied
             self._update_plots(self._current_frame)
 
     def _toggle_median_subtraction(self, label: str):
         """Callback to toggle median subtraction."""
-        # CheckButtons pass the label, we need to check the state
         self._median_subtraction_active = self._median_check.get_status()[0]
         
         if self._current_frame:
-            # Re-process and redraw all data
             self._update_plots(self._current_frame)
 
     def _get_processed_data(self, frame: Frame) -> np.ndarray:
@@ -163,30 +170,22 @@ class TrioDisplay:
     def _update_plots(self, frame: Frame):
         """Updates all plots based on the current frame data."""
         
-        # Get processed data (potentially median subtracted)
         data = self._get_processed_data(frame)
-        
         N_channels, N_ticks = data.shape
         
         self._plane_sizes = frame.plane_sizes()
-        
-        # Calculate offsets: [0, size0, size0+size1]
         self._plane_offsets = [0] + list(np.cumsum(self._plane_sizes[:-1]))
         
-        # Determine if this is the initial setup
         is_initial_setup = self._fig is None
         
         if is_initial_setup:
             self._setup_figure(self._plane_sizes)
-            
-            # Set initial selection to center of the first plane
             self._selected_global_row = self._plane_sizes[0] // 2
             self._selected_col = N_ticks // 2
 
-        # Update title
         self._fig.suptitle(f"Frame {frame.event_number} ({frame.detector()})", fontsize=14)
 
-        # 1. Update Image Plots (Planes)
+        # 1. Update Image Plots and Colorbars
         global_min = data.min()
         global_max = data.max()
         
@@ -197,6 +196,7 @@ class TrioDisplay:
             
             ax_img = self._ax_imgs[i]
             ax_col = self._ax_cols[i]
+            ax_cbar = self._ax_cbars[i]
             
             if self._img_handles[i] is None:
                 # Initial draw
@@ -205,33 +205,118 @@ class TrioDisplay:
                     aspect='auto', 
                     origin='lower', 
                     interpolation='none',
-                    cmap=self._current_cmap
+                    cmap=self._current_cmap,
+                    vmin=global_min,
+                    vmax=global_max
                 )
-                # Set initial Y limits based on local channel index (0 to plane_size)
+                
+                # Set initial limits
                 ax_img.set_ylim(0, self._plane_sizes[i])
-                
-                # Set X limits (shared across all image/row plots)
                 ax_img.set_xlim(0, N_ticks)
-                
-                # Set initial Y limits for column plot (redundant due to sharey, but ensures initial state)
                 ax_col.set_ylim(0, self._plane_sizes[i])
                 
+                # Create colorbar
+                self._cbar_handles[i] = self._fig.colorbar(
+                    self._img_handles[i], 
+                    cax=ax_cbar, 
+                    orientation='vertical'
+                )
+                
             else:
-                # Subsequent draw: update data and colormap if needed
+                # Subsequent draw: update data, colormap, and limits
                 self._img_handles[i].set_data(plane_data)
                 self._img_handles[i].set_cmap(self._current_cmap)
                 
-            # Ensure color limits are consistent across all planes
-            self._img_handles[i].set_clim(global_min, global_max)
-            
-            # Note: We rely on Matplotlib's shared axis mechanism to preserve user zoom 
-            # on subsequent calls, as we no longer reset limits here.
+                # If the data processing changed (e.g., median subtraction toggled), 
+                # reset color limits to the new global min/max, otherwise preserve user zoom.
+                if self._median_subtraction_active or is_initial_setup:
+                    self._img_handles[i].set_clim(global_min, global_max)
+                
+                # Update colorbar to reflect changes in image data/limits
+                self._cbar_handles[i].update_normal(self._img_handles[i])
 
 
         # 2. Update 1D Plots and Cursors
         self._update_1d_plots(data, N_channels, N_ticks, is_initial_setup)
         
         self._fig.canvas.draw_idle()
+
+    def _on_cbar_scroll(self, event):
+        """Handles mouse scroll events on a colorbar axis to zoom color limits."""
+        if event.inaxes not in self._ax_cbars:
+            return
+
+        cbar_index = self._ax_cbars.index(event.inaxes)
+        img_handle = self._img_handles[cbar_index]
+        cbar_handle = self._cbar_handles[cbar_index]
+        
+        if img_handle is None:
+            return
+
+        vmin, vmax = img_handle.get_clim()
+        data_range = vmax - vmin
+        
+        # Zoom factor (e.g., 10% per scroll step)
+        zoom_factor = 0.1
+        
+        if event.button == 'up':
+            # Zoom in (shrink range)
+            new_range = data_range * (1 - zoom_factor)
+        elif event.button == 'down':
+            # Zoom out (expand range)
+            new_range = data_range * (1 + zoom_factor)
+        else:
+            return
+
+        # Center the new range around the current center
+        center = (vmin + vmax) / 2
+        new_vmin = center - new_range / 2
+        new_vmax = center + new_range / 2
+        
+        img_handle.set_clim(new_vmin, new_vmax)
+        cbar_handle.update_normal(img_handle)
+        self._fig.canvas.draw_idle()
+
+    def _on_cbar_click(self, event):
+        """Handles mouse clicks on a colorbar axis for panning or resetting."""
+        if event.inaxes not in self._ax_cbars:
+            return
+
+        cbar_index = self._ax_cbars.index(event.inaxes)
+        img_handle = self._img_handles[cbar_index]
+        cbar_handle = self._cbar_handles[cbar_index]
+        
+        if img_handle is None or event.ydata is None:
+            return
+
+        vmin, vmax = img_handle.get_clim()
+        data_range = vmax - vmin
+        
+        if event.button == 1: # Left click: Pan
+            # Calculate click position relative to current limits
+            click_val = event.ydata
+            center = (vmin + vmax) / 2
+            
+            # Calculate shift needed to center the clicked value
+            shift = click_val - center
+            
+            new_vmin = vmin + shift
+            new_vmax = vmax + shift
+            
+            img_handle.set_clim(new_vmin, new_vmax)
+            cbar_handle.update_normal(img_handle)
+            self._fig.canvas.draw_idle()
+
+        elif event.button == 3: # Right click: Reset to global min/max
+            if self._current_frame:
+                data = self._get_processed_data(self._current_frame)
+                global_min = data.min()
+                global_max = data.max()
+                
+                img_handle.set_clim(global_min, global_max)
+                cbar_handle.update_normal(img_handle)
+                self._fig.canvas.draw_idle()
+
 
     def _update_1d_plots(self, data: np.ndarray, N_channels: int, N_ticks: int, is_initial_setup: bool):
         """Updates the row/column plots and cursor lines."""
@@ -373,7 +458,6 @@ class TrioDisplay:
             self._selected_col = new_col
             
             # When clicking, we are updating the cursor position, not initializing the figure.
-            # We pass the processed data to _update_1d_plots.
             processed_data = self._get_processed_data(self._current_frame)
             self._update_1d_plots(processed_data, N_channels, N_ticks, is_initial_setup=False)
 
