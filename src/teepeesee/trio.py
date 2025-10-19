@@ -107,8 +107,10 @@ class TrioDisplay:
         # Calculate offsets: [0, size0, size0+size1]
         self._plane_offsets = [0] + list(np.cumsum(self._plane_sizes[:-1]))
         
-        # If figure is not set up, set it up now with correct proportional sizes
-        if self._fig is None:
+        # Determine if this is the initial setup
+        is_initial_setup = self._fig is None
+        
+        if is_initial_setup:
             self._setup_figure(self._plane_sizes)
             
             # Set initial selection to center of the first plane
@@ -128,6 +130,7 @@ class TrioDisplay:
             plane_data = data[start_ch:end_ch, :]
             
             ax_img = self._ax_imgs[i]
+            ax_col = self._ax_cols[i]
             
             if self._img_handles[i] is None:
                 # Initial draw
@@ -138,8 +141,14 @@ class TrioDisplay:
                     interpolation='none',
                     cmap='viridis'
                 )
-                # Set Y limits based on local channel index (0 to plane_size)
+                # Set initial Y limits based on local channel index (0 to plane_size)
                 ax_img.set_ylim(0, self._plane_sizes[i])
+                
+                # Set X limits (shared across all image/row plots)
+                ax_img.set_xlim(0, N_ticks)
+                
+                # Set initial Y limits for column plot (redundant due to sharey, but ensures initial state)
+                ax_col.set_ylim(0, self._plane_sizes[i])
                 
             else:
                 # Subsequent draw: update data
@@ -148,19 +157,16 @@ class TrioDisplay:
             # Ensure color limits are consistent across all planes
             self._img_handles[i].set_clim(global_min, global_max)
             
-            # Set X limits (shared)
-            ax_img.set_xlim(0, N_ticks)
-            
-            # Update column axis limits
-            self._ax_cols[i].set_ylim(0, self._plane_sizes[i])
+            # Note: We rely on Matplotlib's shared axis mechanism to preserve user zoom 
+            # on subsequent calls, as we no longer reset limits here.
 
 
         # 2. Update 1D Plots and Cursors
-        self._update_1d_plots(data, N_channels, N_ticks)
+        self._update_1d_plots(data, N_channels, N_ticks, is_initial_setup)
         
         self._fig.canvas.draw_idle()
 
-    def _update_1d_plots(self, data: np.ndarray, N_channels: int, N_ticks: int):
+    def _update_1d_plots(self, data: np.ndarray, N_channels: int, N_ticks: int, is_initial_setup: bool):
         """Updates the row/column plots and cursor lines."""
         
         # Ensure selected indices are within bounds
@@ -175,14 +181,18 @@ class TrioDisplay:
         
         self._ax_row.plot(data[global_row, :], color='C0')
         self._ax_row.axvline(col, color='r', linestyle=':', linewidth=1)
-        self._ax_row.set_xlim(0, N_ticks)
+        
+        # Only set X limits if initializing, otherwise preserve user zoom (shared axis)
+        if is_initial_setup:
+            self._ax_row.set_xlim(0, N_ticks)
+            
         self._ax_row.autoscale_view(tight=True, scalex=False, scaley=True)
         
         # --- Column Plots (Channel profiles for selected tick) ---
         
         # Clear previous cursors from image plots
         for ax_img in self._ax_imgs:
-            # FIX: Iterate and remove lines instead of calling .clear() on ArtistList
+            # Iterate and remove lines instead of calling .clear() on ArtistList
             for line in ax_img.lines:
                 line.remove()
             
@@ -205,7 +215,11 @@ class TrioDisplay:
             
             # Plot data[0:plane_size, col] against local channel index (0 to plane_size)
             ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}')
-            ax_col.set_ylim(0, plane_size)
+            
+            # Only set Y limits if initializing, otherwise preserve user zoom (shared axis)
+            if is_initial_setup:
+                ax_col.set_ylim(0, plane_size)
+                
             ax_col.autoscale_view(tight=True, scalex=True, scaley=False)
             ax_col.invert_xaxis() 
             
@@ -275,7 +289,9 @@ class TrioDisplay:
         if new_global_row != self._selected_global_row or new_col != self._selected_col:
             self._selected_global_row = new_global_row
             self._selected_col = new_col
-            self._update_1d_plots(data, N_channels, N_ticks)
+            
+            # When clicking, we are updating the cursor position, not initializing the figure.
+            self._update_1d_plots(data, N_channels, N_ticks, is_initial_setup=False)
 
     def show(self, frame: Frame):
         """
