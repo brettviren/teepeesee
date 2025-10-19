@@ -1,0 +1,11 @@
+#+title: teepeesee - a display of Wire-Cell frame files
+
+This was written by me and Gemini in about three hours during a sleepless night.
+
+Usage:
+
+#+begin_example
+$ uv tool install git+https://github.com/brettviren/teepeesee
+$ teepeesee display frame-file.npz
+#+end_example
+

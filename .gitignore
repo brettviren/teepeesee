@@ -11,3 +11,4 @@ wheels/
 *~
 chat.org
 .aider*
+*.npz
