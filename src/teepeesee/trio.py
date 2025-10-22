@@ -94,7 +94,7 @@ class TrioDisplay:
             
             # Synchronization and cleanup
             ax_col.tick_params(axis='y', labelleft=False)
-            ax_col.invert_xaxis() # Amplitude left-to-right
+            # ax_col.invert_xaxis() # Amplitude left-to-right
             
             # Hide X ticks for upper images
             if i < self.N_PLANES - 1:
@@ -181,7 +181,7 @@ class TrioDisplay:
         """Applies active data transformations to the frame data."""
         
         # Cast data to float before processing to avoid integer overflow/casting errors
-        data = frame.frame.astype(np.float64)
+        data = frame.frame.astype(np.float32)
         
         if self._median_subtraction_active:
             # Calculate median for each row (channel)
@@ -373,7 +373,7 @@ class TrioDisplay:
         # Optimization: Avoid clearing if possible, update line data instead
         if self._row_line_handle is None:
             self._ax_row.clear()
-            self._row_line_handle, = self._ax_row.plot(data[global_row, :], color='C0')
+            self._row_line_handle, = self._ax_row.plot(data[global_row, :], color='C0', drawstyle='steps-mid')
         else:
             self._row_line_handle.set_ydata(data[global_row, :])
             # We still need to update titles/labels/cursors, but avoid clearing the axis
@@ -381,6 +381,7 @@ class TrioDisplay:
         self._ax_row.set_title(f"Global Channel {global_row} Profile")
         self._ax_row.set_xlabel("Ticks")
         self._ax_row.set_ylabel("Amplitude")
+        self._ax_row.grid()
         
         # Update X limits and autoscale Y
         if is_initial_setup:
@@ -434,7 +435,7 @@ class TrioDisplay:
             if self._col_line_handles[i] is None:
                 ax_col.clear()
                 # Plot data[0:plane_size, col] against local channel index (0 to plane_size)
-                self._col_line_handles[i], = ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}')
+                self._col_line_handles[i], = ax_col.plot(plane_data_col, np.arange(plane_size), color=f'C{i+1}', drawstyle='steps-mid')
             else:
                 # Update X data (amplitude) and Y data (channel index, which is constant)
                 self._col_line_handles[i].set_xdata(plane_data_col)
@@ -452,7 +453,8 @@ class TrioDisplay:
             # Re-evaluate limits based on new data
             ax_col.relim()
             ax_col.autoscale_view(tight=True, scalex=True, scaley=False)
-            ax_col.invert_xaxis() 
+            #ax_col.invert_xaxis() 
+            ax_col.grid()
             
             # Draw horizontal cursor on column plot if the selected row is in this plane
             if start_ch <= global_row < end_ch:
@@ -475,6 +477,8 @@ class TrioDisplay:
                 ax_img.set_xlabel("Ticks")
             else:
                 ax_img.tick_params(axis='x', labelbottom=False)
+            ax_img.grid()
+
 
         # Redraw required for clear() usage
         self._fig.canvas.draw_idle()
