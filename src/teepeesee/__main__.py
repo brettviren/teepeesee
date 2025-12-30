@@ -17,14 +17,16 @@ def cli():
 
 
 @cli.command()
+@click.option("-t", "--tag", default="",
+              help="Explicitly select one trace set tag")
 @click.argument('npz_path', type=click.Path(exists=True))
-def display(npz_path):
+def display(npz_path, tag):
     """
     Display the first frame from the specified NPZ file interactively, 
     split by detector plane.
     """
     try:
-        data_source = Data(npz_path)
+        data_source = Data(npz_path, tag)
         if len(data_source) == 0:
             click.echo(f"Error: No complete event trios found in {npz_path}", err=True)
             sys.exit(1)

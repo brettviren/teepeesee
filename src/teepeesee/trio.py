@@ -16,7 +16,7 @@ class TrioDisplay:
     Includes GUI widgets for control and interactive colorbars.
     """
     N_PLANES = 3
-    AVAILABLE_CMAPS = ["viridis", "seismic", "rainbow"]
+    AVAILABLE_CMAPS = ["seismic", "viridis", "rainbow"]
 
     def __init__(self):
         self._fig: Optional[Figure] = None
@@ -157,7 +157,7 @@ class TrioDisplay:
         
         self._median_check = CheckButtons(self._ax_median, ['Subtract Median'], [False])
         self._median_check.on_clicked(self._toggle_median_subtraction)
-        
+
         # Connect click event handler for cursor updates
         self._fig.canvas.mpl_connect('button_press_event', self._on_click)
         
@@ -176,6 +176,7 @@ class TrioDisplay:
         
         if self._current_frame:
             self._update_plots(self._current_frame)
+
 
     def _get_processed_data(self, frame: Frame) -> np.ndarray:
         """Applies active data transformations to the frame data."""
@@ -208,20 +209,25 @@ class TrioDisplay:
             self._selected_col = N_ticks // 2
 
         self._fig.suptitle(f"Frame {frame.event_number} ({frame.detector()})", fontsize=14)
-
-        # Determine color limits based on processing state
-        if self._median_subtraction_active:
-            # Symmetric limits around zero
-            max_abs = np.max(np.abs(data))
-            vmin = -max_abs
-            vmax = max_abs
-        else:
-            # Standard min/max limits
-            vmin = data.min()
-            vmax = data.max()
-        
         
         for i in range(self.N_PLANES):
+            if self._plane_sizes[i] == 0:
+                print(f'Plane {i} has no channels, skipping')
+                continue
+
+
+            # Determine color limits based on processing state
+            if self._median_subtraction_active:
+                # Symmetric limits around zero
+                max_abs = np.max(np.abs(data))
+                vmin = -max_abs
+                vmax = max_abs
+            else:
+                # Standard min/max limits
+                vmin = data.min()
+                vmax = data.max()
+
+
             start_ch = self._plane_offsets[i]
             end_ch = start_ch + self._plane_sizes[i]
             plane_data = data[start_ch:end_ch, :]
@@ -414,6 +420,10 @@ class TrioDisplay:
             
         
         for i in range(self.N_PLANES):
+            if self._plane_sizes[i] == 0:
+                print(f'Plane {i} has no channels, skipping')
+                continue
+
             ax_col = self._ax_cols[i]
             ax_img = self._ax_imgs[i]
             

@@ -5,11 +5,15 @@ from typing import Dict, List, Tuple
 # Lookup table for detector names based on the number of channels (rows in frame array)
 _DETECTOR_MAP: Dict[int, str] = {
     2560: "apa",
+    1600: "apauv",
+    800: "apaind",
 }
 
 # Lookup table for plane sizes based on detector name
 _PLANE_SIZES_MAP: Dict[str, List[int]] = {
     "apa": [800, 800, 960],
+    "apauv": [800, 800, 0],
+    "apaind": [800, 0, 0],
 }
 
 class Frame:
@@ -24,6 +28,7 @@ class Frame:
         if tickinfo.size != 3:
             raise ValueError("wrong size tickinfo")
 
+        print(f'Loaded frame of shape {frame.shape} with channels {channels.shape}') 
         self.frame = frame
         self.channels = channels
         self.tickinfo = tickinfo
@@ -58,7 +63,9 @@ class Frame:
             
         n_channels = self.frame.shape[0]
         
-        return _DETECTOR_MAP.get(n_channels, f"det{n_channels}")
+        det = _DETECTOR_MAP.get(n_channels, f"det{n_channels}")
+        print(f'using detector: {det}')
+        return det
 
     def plane_sizes(self) -> List[int]:
         """
@@ -80,6 +87,14 @@ class Frame:
         
         return [n1, n2, n3]
 
+def tag_match(have_tag, want_tag=None):
+    '''
+    Return True if have_tag matches want_tag
+    '''
+    if not want_tag:
+        if have_tag in (None, "", "*", "none", "null", "sigh"):
+            return True
+    return have_tag == want_tag
 
 class Data:
     """
@@ -94,14 +109,14 @@ class Data:
     # Maps event number to a tuple of array names: (frame_name, channels_name, tickinfo_name)
     _EventMap = Dict[int, Dict[str, str]]
 
-    def __init__(self, npz_path: str):
+    def __init__(self, npz_path: str, tag: str = ""):
         self._npz_path = npz_path
         self._event_map: Data._EventMap
         self._event_numbers: List[int]
         
-        self._event_map, self._event_numbers = self._parse_array_names(npz_path)
+        self._event_map, self._event_numbers = self._parse_array_names(npz_path, tag)
 
-    def _parse_array_names(self, npz_path: str) -> Tuple[_EventMap, List[int]]:
+    def _parse_array_names(self, npz_path: str, tag=None) -> Tuple[_EventMap, List[int]]:
         """Reads array names from the NPZ file and groups them by event number."""
         try:
             # Load the file structure without loading data
@@ -118,6 +133,20 @@ class Data:
         grouped_names: Dict[int, Dict[str, str]] = {}
         required_categories = {"frame", "channels", "tickinfo"}
 
+        have_tags = set()
+        for name in array_names:
+            # Expected format: category_tag_event_number
+            parts = name.split('_')
+
+            have_tag = '_' .join(list(parts[1:-1]))
+            have_tags.add(have_tag)
+        have_tags = list(have_tags)
+
+        print(f'{have_tags=}')
+        if not tag:
+            tag = have_tags[0]
+            print(f'no trace set tag specified, will use: "{tag}"')
+
         for name in array_names:
             # Expected format: category_tag_event_number
             parts = name.split('_')
@@ -129,6 +158,14 @@ class Data:
             
             if category not in required_categories:
                 continue
+
+            have_tag = '_' .join(list(parts[1:-1]))
+            if not tag_match(have_tag, tag):
+                print(f'rejecting tag "{have_tag}" as not matching "{tag}"')
+                continue
+
+            if category == 'frame':
+                print(f'found trace set tag "{have_tag}"')
 
             try:
                 # The event number is the last part
@@ -147,6 +184,7 @@ class Data:
         for event_num, trio in grouped_names.items():
             if set(trio.keys()) == required_categories:
                 event_map[event_num] = trio
+                print('Frame:', trio['frame'])
 
         # Store event numbers sorted numerically
         event_numbers: List[int] = sorted(event_map.keys())
