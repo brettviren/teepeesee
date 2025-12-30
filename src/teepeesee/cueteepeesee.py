@@ -198,7 +198,6 @@ class FrameImage(pg.PlotWidget):
         self.addItem(self.v_line, ignoreBounds=True)
         self.addItem(self.h_line, ignoreBounds=True)
         self.info_box = FrameInfo(self)
-        self.tick_box = TickOverlay(self)
         self.v_line.sigDragged.connect(self.emit_selection)
         self.h_line.sigDragged.connect(self.emit_selection)
         self.scene().sigMouseClicked.connect(self.handle_click)
@@ -306,8 +305,6 @@ class FrameDisplay(qw.QWidget):
         super().resizeEvent(ev)
         if hasattr(self, "info_box"):
             self.info_box.move(self.width() - self.info_box.width() - 10, self.height() - self.info_box.height() - 10)
-        if hasattr(self, "tick_box"):
-            self.tick_box.move(10, 10)
 
     def _on_internal_change(self, col, row):
         data = self.f_image.image_item.image
