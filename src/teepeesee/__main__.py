@@ -1,8 +1,6 @@
 import click
 import sys
-from .io import Data
-from .trio import TrioDisplay # Changed import
-import matplotlib.pyplot as plt
+
 
 # The version should ideally be read from package metadata.
 # For now, we'll use a placeholder.
@@ -16,6 +14,16 @@ def cli():
     pass
 
 
+@cli.command("mdisplay")
+@click.argument('paths', type=click.Path(exists=True), nargs=-1)
+def mdisplay(paths):
+    from .mio import Data
+    data = Data(paths)
+    from .mdisplay import launch
+    launch(data)
+
+    
+
 @cli.command()
 @click.option("-t", "--tag", default="",
               help="Explicitly select one trace set tag")
@@ -25,6 +33,8 @@ def display(npz_path, tag):
     Display the first frame from the specified NPZ file interactively, 
     split by detector plane.
     """
+    import matplotlib.pyplot as plt
+    from .io import Data
     try:
         data_source = Data(npz_path, tag)
         if len(data_source) == 0:
@@ -34,6 +44,7 @@ def display(npz_path, tag):
         frame = data_source[0]
         
         # Use TrioDisplay for plane separation
+        from .trio import TrioDisplay
         display_app = TrioDisplay()
         display_app.show(frame)
         

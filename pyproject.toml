@@ -12,11 +12,13 @@ dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.3.4",
     "pytest>=8.4.2",
-    "PyQt6>=6.7.0", # Added dependency for interactive Matplotlib backend
+    "pyqt6>=6.7.0",
+    "pyqtgraph>=0.14.0",
 ]
 
 [project.scripts]
 teepeesee = "teepeesee.__main__:cli"
+cueteepeesee = "teepeesee.cueteepeesee:main"
 
 
 [build-system]
