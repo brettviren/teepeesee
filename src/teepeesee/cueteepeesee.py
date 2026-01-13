@@ -226,7 +226,7 @@ class TensorFileSource(qc.QObject):
         return self._index
     
     def _generate(self):
-        """Load and stack all planes for the current index."""
+        """Load all planes for the current index and create separate parts."""
         if not self.inventory:
             return
         
@@ -259,39 +259,35 @@ class TensorFileSource(qc.QObject):
                         
                         planes_data[plane_num] = (array, metadata)
                 
-                # Sort by plane number and stack
+                # Sort by plane number
                 sorted_planes = sorted(planes_data.items())
                 
                 if not sorted_planes:
                     return
                 
-                # Stack arrays along channel dimension
-                stacked_arrays = [arr for _, (arr, _) in sorted_planes]
-                combined_array = np.vstack(stacked_arrays)
-                
-                # Generate synthetic channels
-                num_channels = combined_array.shape[0]
-                channels = np.arange(num_channels)
-                
-                # Use metadata from first plane for tickinfo
-                first_metadata = sorted_planes[0][1][1]
-                if first_metadata and 'time' in first_metadata and 'period' in first_metadata:
-                    time_start = first_metadata['time']
-                    period = first_metadata['period']
-                    num_ticks = combined_array.shape[1]
-                    tickinfo = np.array([time_start, period, num_ticks])
-                else:
-                    # Default tickinfo
-                    num_ticks = combined_array.shape[1]
-                    tickinfo = np.array([0, 1, num_ticks])
-                
-                # Create parts list matching the display structure
-                # For now, emit as a single part (could be split based on detector map later)
-                parts = [dict(
-                    samples=combined_array,
-                    channels=channels,
-                    tickinfo=tickinfo
-                )]
+                # Create parts list with one part per plane
+                parts = []
+                for plane_num, (array, metadata) in sorted_planes:
+                    # Generate synthetic channels
+                    num_channels = array.shape[0]
+                    channels = np.arange(num_channels)
+                    
+                    # Extract tickinfo from metadata
+                    if metadata and 'time' in metadata and 'period' in metadata:
+                        time_start = metadata['time']
+                        period = metadata['period']
+                        num_ticks = array.shape[1]
+                        tickinfo = np.array([time_start, period, num_ticks])
+                    else:
+                        # Default tickinfo
+                        num_ticks = array.shape[1]
+                        tickinfo = np.array([0, 1, num_ticks])
+                    
+                    parts.append(dict(
+                        samples=array,
+                        channels=channels,
+                        tickinfo=tickinfo
+                    ))
                 
                 self.dataReady.emit(parts)
                 
