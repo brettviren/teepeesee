@@ -32,10 +32,14 @@ class DataSource(qc.QObject):
     def __init__(self):
         super().__init__()
         self._index = 0
+        self._layer = 0
 
     @property
     def index(self):
         return self._index
+    @property
+    def layer(self):
+        return self._layer
     @property
     def name(self):
         return "base"
@@ -91,30 +95,42 @@ class FileSource(qc.QObject):
         if self._delegate:
             return self._delegate.index
         return 0
-    
+
+    @property
+    def layer(self):
+        if self._delegate and hasattr(self._delegate, 'layer'):
+            return self._delegate.layer
+        return 0
+
     @qc.pyqtSlot()
     def next(self):
         if self._delegate:
             self._delegate.next()
-    
+
     @qc.pyqtSlot()
     def prev(self):
         if self._delegate:
             self._delegate.prev()
-    
+
     @qc.pyqtSlot(int)
     def jump(self, idx):
         if self._delegate:
             self._delegate.jump(idx)
 
+    @qc.pyqtSlot(int)
+    def setLayer(self, layer):
+        if self._delegate and hasattr(self._delegate, 'setLayer'):
+            self._delegate.setLayer(layer)
+
 class FrameFileSource(qc.QObject):
     dataReady = qc.pyqtSignal(list)
-    
+
     def __init__(self, filenames):
         super().__init__()
         self.files = filenames
-        self.inventory = [] 
+        self.inventory = []
         self._index = 0
+        self._layer = 0
         self._parse_files()
 
     def _parse_files(self):
@@ -141,7 +157,12 @@ class FrameFileSource(qc.QObject):
         return f"{os.path.basename(fpath)} | {tag} [{num}]"
 
     @property
-    def index(self): return self._index
+    def index(self):
+        return self._index
+
+    @property
+    def layer(self):
+        return self._layer
 
     def _generate(self):
         if not self.inventory:
@@ -182,12 +203,13 @@ class FrameFileSource(qc.QObject):
 
 class TensorFileSource(qc.QObject):
     dataReady = qc.pyqtSignal(list)
-    
+
     def __init__(self, filenames):
         super().__init__()
         self.files = filenames
         self.inventory = []  # List of (filepath, index) tuples
         self._index = 0
+        self._layer = 0
         self._parse_files()
         print(f'TensorFileSource: {self.name}')
     
@@ -220,10 +242,14 @@ class TensorFileSource(qc.QObject):
             return "No data"
         fpath, idx = self.inventory[self._index]
         return f"{os.path.basename(fpath)} | tensor [{idx}]"
-    
+
     @property
     def index(self):
         return self._index
+
+    @property
+    def layer(self):
+        return self._layer
     
     def _generate(self):
         """Load all planes for the current index and create separate parts."""
@@ -246,17 +272,20 @@ class TensorFileSource(qc.QObject):
                     if array_match and int(array_match.group('index')) == target_index:
                         plane_num = int(array_match.group('plane'))
                         array = data[k]
-                        
-                        # Handle 3D arrays by taking first feature
+
+                        # Handle 3D arrays by using the layer property
                         if array.ndim == 3:
-                            array = array[0, :, :]
-                        
+                            # Clip layer to valid range
+                            layer_idx = min(self._layer, array.shape[0] - 1)
+                            layer_idx = max(0, layer_idx)
+                            array = array[layer_idx, :, :]
+
                         # Find corresponding metadata
                         meta_key = f"tensor_{target_index}_{plane_num}_metadata.json"
                         metadata = None
                         if meta_key in data.files:
                             metadata = json.loads(data[meta_key].decode())
-                        
+
                         planes_data[plane_num] = (array, metadata)
                 
                 # Sort by plane number
@@ -314,6 +343,13 @@ class TensorFileSource(qc.QObject):
             self._index = idx
             self._generate()
 
+    @qc.pyqtSlot(int)
+    def setLayer(self, layer):
+        """Set the layer index for 3D arrays."""
+        if self._layer != layer:
+            self._layer = layer
+            self._generate()
+
 class RandomDataSource(DataSource):
     def __init__(self, shapes):
         super().__init__()
@@ -340,6 +376,8 @@ class RandomDataSource(DataSource):
     def prev(self): self._index = max(0, self._index - 1); self._generate()
     @qc.pyqtSlot(int)
     def jump(self, idx): self._index = max(0, idx); self._generate()
+    @qc.pyqtSlot(int)
+    def setLayer(self, layer): self._layer = layer  # No-op for random data
 
 
 class FrameTime(pg.PlotWidget):
@@ -428,6 +466,8 @@ class FrameDisplay(qw.QWidget):
         self.baseline_data = None
         self._is_syncing = False
         self._rebaseline_active = False
+        self._user_has_zoomed = False
+        self._programmatic_range_change = False
         layout = qw.QGridLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         self.f_image = FrameImage()
@@ -444,6 +484,7 @@ class FrameDisplay(qw.QWidget):
         layout.setRowStretch(0, 10)
         self.f_time.setXLink(self.f_image); self.f_chan.setYLink(self.f_image)
         self.f_image.selectionChanged.connect(self._on_internal_change)
+        self.f_image.getViewBox().sigRangeChanged.connect(self._on_range_changed)
         self.f_image.getViewBox().sigRangeChanged.connect(self.update_hist_region)
 
     @qc.pyqtSlot(np.ndarray)
@@ -520,6 +561,28 @@ class FrameDisplay(qw.QWidget):
     def set_crosshair(self, x, y):
         self.f_image.set_lines(x, y); self._on_internal_change(x, y)
 
+    def set_vertical_crosshair(self, x):
+        """Set only the vertical crosshair (x position), keeping horizontal independent."""
+        y = int(self.f_image.h_line.value())
+        self.f_image.v_line.setValue(x)
+        self.f_image.getViewBox().update()
+        self._on_internal_change(x, y)
+
+    def _on_range_changed(self):
+        """Track when user manually changes the view range."""
+        if not self._programmatic_range_change:
+            self._user_has_zoomed = True
+
+    def reset_to_default_view(self):
+        """Reset view with X-axis starting at 0 on the left."""
+        data = self.f_image.image_item.image
+        if data is not None:
+            h, w = data.shape
+            self._programmatic_range_change = True
+            self.f_image.getViewBox().setRange(xRange=(0, w), yRange=(0, h), padding=0)
+            self._programmatic_range_change = False
+            self._user_has_zoomed = False
+
 # --- Main Window ---
 
 class MainWindow(qw.QMainWindow):
@@ -587,6 +650,14 @@ class MainWindow(qw.QMainWindow):
         self.next_btn = qw.QPushButton("Next")
         toolbar.addWidget(self.next_btn)
         toolbar.addSeparator()
+        toolbar.addWidget(qw.QLabel(" Layer: "))
+        self.layer_spinbox = qw.QSpinBox()
+        self.layer_spinbox.setMinimum(0)
+        self.layer_spinbox.setMaximum(999)
+        self.layer_spinbox.setValue(0)
+        self.layer_spinbox.setFixedWidth(60)
+        toolbar.addWidget(self.layer_spinbox)
+        toolbar.addSeparator()
         toolbar.addWidget(qw.QLabel(" Jump: "))
         self.idx_input = qw.QLineEdit(); self.idx_input.setFixedWidth(60)
         self.idx_input.setValidator(qg.QIntValidator(0, 999999))
@@ -620,10 +691,15 @@ class MainWindow(qw.QMainWindow):
         except:
             # print("Failed to disconnect next button")
             pass
-
+        try:
+            self.layer_spinbox.valueChanged.disconnect()
+        except:
+            # print("Failed to disconnect layer spinbox")
+            pass
 
         self.prev_btn.clicked.connect(self.current_source.prev)
         self.next_btn.clicked.connect(self.current_source.next)
+        self.layer_spinbox.valueChanged.connect(self.current_source.setLayer)
         self.current_source.dataReady.connect(self.distribute_data)
         self.current_source.dataReady.connect(self.update_ui)
 
@@ -642,8 +718,11 @@ class MainWindow(qw.QMainWindow):
         for i, datum in enumerate(data):
             if i < len(self.displays):
                 self.displays[i].updateData(**datum)
-        
-        self.reset_view()
+
+        # Reset view only if no display has been manually zoomed by user
+        if not any(d._user_has_zoomed for d in self.displays):
+            self.reset_view()
+
         if is_initial_load:
             qc.QTimer.singleShot(50, self.auto_contrast_all)
         else:
@@ -653,12 +732,19 @@ class MainWindow(qw.QMainWindow):
         if self.current_source:
             self.status_bar.showMessage(f"Source: {self.current_source.name}")
             self.idx_input.setText(str(self.current_source.index))
+            self.layer_spinbox.blockSignals(True)
+            self.layer_spinbox.setValue(self.current_source.layer)
+            self.layer_spinbox.blockSignals(False)
 
     def reset_view(self):
-        [d.f_image.autoRange() for d in self.displays]
+        """Reset all displays to default view with X starting at 0."""
+        for d in self.displays:
+            d.reset_to_default_view()
 
     def reset_zoom(self):
-        [d.f_image.getViewBox().autoRange() for d in self.displays]
+        """Reset zoom to default view with X starting at 0."""
+        for d in self.displays:
+            d.reset_to_default_view()
 
     def auto_contrast_all(self):
         [d.auto_contrast() for d in self.displays]
@@ -687,7 +773,7 @@ class MainWindow(qw.QMainWindow):
         for d in self.displays:
             if d != src:
                 d._is_syncing = True
-                d.set_crosshair(col, row)
+                d.set_vertical_crosshair(col)
                 d._is_syncing = False
 
 def main():
