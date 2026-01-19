@@ -13,3 +13,6 @@ chat.org
 .aider*
 *.npz
 *.html
+cut
+notes.org
+pyqt_example.py
