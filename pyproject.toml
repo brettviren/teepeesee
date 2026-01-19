@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-qtpc = "teepeesee.cueteepeesee:main"
+qtpc = "teepeesee.cli:main"
 
 
 [build-system]
