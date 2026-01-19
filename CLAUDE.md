@@ -19,12 +19,15 @@ uv pip install -e .
 
 ### Running the Applications
 ```bash
-# Qt-based display (newer, faster, recommended)
+# Qt-based display (click-based CLI)
 # Uses QtPy wrapper for Qt compatibility (PyQt6, PyQt5, PySide2, PySide6)
 qtpc frame-file.npz [...]
 
-# Start with no files and can use random demo data
+# Start with no files and use random demo data
 qtpc
+
+# Show help
+qtpc --help
 ```
 
 ### Testing
@@ -82,11 +85,11 @@ QtPy GUI widgets with pyqtgraph-based data display widgets.
 
 ### Key Components
 
-Currently there is a single `cueteepeesee.py` main.  It will be modularized to separate out:
+The main Qt application has been modularized:
 
-- data sources
-- fixed gui construction
-- display gui construction
+- **`cli.py`**: Click-based CLI entry point for `qtpc` command, handles argument parsing
+- **`gui.py`**: MainWindow and GUI construction
+- **`cueteepeesee.py`**: Legacy entry point and data source classes (being refactored)
 
 ### Detector Geometries
 
