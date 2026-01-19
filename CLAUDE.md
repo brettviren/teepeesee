@@ -19,15 +19,12 @@ uv pip install -e .
 
 ### Running the Applications
 ```bash
-# Matplotlib-based display (older, slower)
-teepeesee display frame-file.npz
-teepeesee mdisplay frame-file.npz [...]
+# Qt-based display (newer, faster, recommended)
+# Uses QtPy wrapper for Qt compatibility (PyQt6, PyQt5, PySide2, PySide6)
+qtpc frame-file.npz [...]
 
-# PyQt6-based display (newer, faster, recommended)
-cueteepeesee frame-file.npz [...]
-
-# Random demo data (no file needed)
-cueteepeesee
+# Start with no files and can use random demo data
+qtpc
 ```
 
 ### Testing
@@ -46,55 +43,50 @@ pytest -v
 
 ### Data Model
 
-The project uses two main data schemas:
+The input data is modeled as a `DataSource` class.  Each different kind of input from file has its own `FileSource` class.  A data source represents a discrete location or **index** in a stream of data.  At each **index** is a list of **parts** and each **part** is dict with these keys:
 
-1. **Frame Schema** (Wire-Cell format): Used by `io.py` and `trio.py`
-   - Arrays named: `frame_<tag>_<event_num>`, `channels_<tag>_<event_num>`, `tickinfo_<tag>_<event_num>`
-   - A "Frame" represents one complete detector readout event
-   - Each frame is split into 3 channel planes (U, V, Collection) with detector-specific channel counts
+- `samples` :: a numpy array of at least 2 dimensions of shape `(nchan, ntick)` giving a 2D image.  If the array is 3D then it has shape `(nfeat, nchan, ntick)` where `nfeat` gives some number of features.
+- `channels` :: a numpy array of detector electronics channel ID number labeling each row of the `nchan` dimension.
+- `tickinfo` :: a length-3 array of `(start_time, sample_period, nchan)`
 
-2. **Tensor Schema**: Used by `cueteepeesee.py` for more general data
+The project currently supports two file data sources, both as `.npz` numpy zip file format and with these schema:
+
+1. **Frame Schema** (Wire-Cell "frame" format)
+   - Arrays named: `frame_<tag>_<index>`, `channels_<tag>_<index>`, `tickinfo_<tag>_<index>`
+   - Three with common `<tag>` and `<index>` contribute to the parts of the index.
+   - The `<tag>` may have underscores.
+   - The `frame_<tag>_<index>` and `channels_<tag>_<index>` arrays are each concatenations of multiple parts.  The `DETECTOR_MAP` maps the `nchan` dimension size to a name and a "splits".  The "splits" tuple shows how to partition the two arrays along the `nchan` dimension to make parts.
+
+2. **Tensor Schema**: (Wire-Cell "tensor" format) is a generalization of the "frame" format.
    - Arrays named: `tensor_<index>_<plane>_array`, `tensor_<index>_<plane>_metadata.json`
    - Supports 3D arrays with feature dimensions (layers)
+   - Here, we assume the "frame" model is expressed in the "tensor schema" and each `<plane>` array is one **part** for the index.  Each array provides one `samples` array.
+   - Each `<plane>` is an integer counting a **part**.
+   - The JSON file provides metadata about the corresponding array.
+
 
 ### Data Flow
 
-```
-NPZ File → Data/DataSource → Frame/FrameSet → Display Widget
-```
-
-- **Data classes** (`io.Data`, `mio.Data`): Parse NPZ files, provide list-like access to frames
-- **DataSource classes** (`cueteepeesee.py`): Qt-based, emit signals when data changes
-  - `FileSource`: Auto-detects schema, delegates to `FrameFileSource` or `TensorFileSource`
-  - `RandomDataSource`: Generates synthetic data for testing
-- **Frame/FrameSet**: Container for event data with channel/time metadata
-- **Display classes**: Visualize frames with zooming, color mapping, crosshairs
+The application is reactive via signal/slot.  Every `DataSource` has a
+`dataReady` signal that emits the list of parts.
 
 ### GUI Architecture
 
-Two display implementations:
+QtPy GUI widgets with pyqtgraph-based data display widgets.
 
-1. **Matplotlib-based** (`display.py`, `trio.py`, `mdisplay.py`):
-   - Older, slower, simpler
-   - `Display`: Single image view
-   - `TrioDisplay`: Three plane views with independent scaling
-
-2. **PyQt6/pyqtgraph-based** (`cueteepeesee.py`):
-   - Modern, faster rendering
+   - Uses QtPy wrapper for Qt binding compatibility (supports PyQt6, PyQt5, PySide2, PySide6)
    - Signal/slot architecture for UI updates
    - Three `FrameDisplay` widgets stacked vertically (one per plane)
-   - Synchronized vertical crosshairs, independent horizontal positions
+   - Synchronized vertical crosshairs (selecting a common time tick, aka image column) , independent horizontal positions (selecting individual detector electronics channels, aka image rows).
    - Features: multiple colormaps, baseline subtraction, auto-contrast, grid toggle, layer navigation for 3D data
 
 ### Key Components
 
-- **`__main__.py`**: Click-based CLI entry point for `teepeesee` command
-- **`cueteepeesee.py`**: Main Qt application and entry point (850 lines, contains most Qt logic)
-- **`io.py`**: Frame schema data loading with lazy evaluation
-- **`mio.py`**: Alternative data loader (frame sets, less complete)
-- **`trio.py`**: Matplotlib three-plane display
-- **`display.py`**: Matplotlib single-image display
-- **`qt.py`**: Qt/pyqtgraph import configuration (row-major image axis order)
+Currently there is a single `cueteepeesee.py` main.  It will be modularized to separate out:
+
+- data sources
+- fixed gui construction
+- display gui construction
 
 ### Detector Geometries
 
@@ -121,6 +113,9 @@ bd sync               # Sync with git
 
 ## Important Notes
 
+- The Qt application uses **QtPy** wrapper for Qt binding compatibility
+  - Supports multiple Qt backends: PyQt6 (default), PyQt5, PySide2, PySide6
+  - Set `QT_API` environment variable to choose backend (e.g., `export QT_API=pyqt6`)
 - The Qt application uses **row-major** image axis order (y, x) for consistency with numpy
 - NPZ files can contain multiple events and multiple data tiers (tags)
 - Frame data is channel-major: shape is `(n_channels, n_ticks)`

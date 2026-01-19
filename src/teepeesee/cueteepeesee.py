@@ -3,9 +3,9 @@ import os
 import re
 import json
 import numpy as np
-import PyQt6.QtWidgets as qw
-import PyQt6.QtCore as qc
-import PyQt6.QtGui as qg
+from qtpy import QtWidgets as qw
+from qtpy import QtCore as qc
+from qtpy import QtGui as qg
 import pyqtgraph as pg
 
 # Environment: Debian/Linux, row-major (y, x)
