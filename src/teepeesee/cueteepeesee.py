@@ -52,7 +52,8 @@ class FileDataSource(qc.QObject):
     def _parse_files(self):
         pattern = re.compile(r"^frame_(?P<tag>.+)_(?P<num>\d+)$")
         for f in self.files:
-            if not os.path.exists(f): continue
+            if not os.path.exists(f):
+                continue
             try:
                 with np.load(f) as data:
                     current_items = []
@@ -106,13 +107,20 @@ class FileDataSource(qc.QObject):
 
     @qc.pyqtSlot()
     def next(self):
-        if self._index < len(self.inventory)-1: self._index += 1; self._generate()
+        if self._index < len(self.inventory)-1:
+            self._index += 1
+            self._generate()
+
     @qc.pyqtSlot()
     def prev(self):
-        if self._index > 0: self._index -= 1; self._generate()
+        if self._index > 0:
+            self._index -= 1
+            self._generate()
     @qc.pyqtSlot(int)
     def jump(self, idx):
-        if 0 <= idx < len(self.inventory): self._index = idx; self._generate()
+        if 0 <= idx < len(self.inventory):
+            self._index = idx
+            self._generate()
 
 class RandomDataSource(DataSource):
     def __init__(self, shapes):
@@ -128,18 +136,27 @@ class RandomDataSource(DataSource):
         for h, w in self.shapes:
             data = rng.normal(loc=100, scale=10, size=(h, w)).astype(np.float32)
             for _ in range(rng.integers(1, 5)):
-                row = rng.integers(0, h); data[row, :] += rng.uniform(20, 50)
+                row = rng.integers(0, h)
+                data[row, :] += rng.uniform(20, 50)
             outputs.append(dict(samples=data,
                                 channels=np.arange(data.shape[0]),
                                 tickinfo=np.array([0, 1, data.shape[1]])))
         self.dataReady.emit(outputs)
 
     @qc.pyqtSlot()
-    def next(self): self._index += 1; self._generate()
+    def next(self):
+        self._index += 1
+        self._generate()
+
     @qc.pyqtSlot()
-    def prev(self): self._index = max(0, self._index - 1); self._generate()
+    def prev(self):
+        self._index = max(0, self._index - 1)
+        self._generate()
+
     @qc.pyqtSlot(int)
-    def jump(self, idx): self._index = max(0, idx); self._generate()
+    def jump(self, idx):
+        self._index = max(0, idx)
+        self._generate()
 
 
 class FrameTime(pg.PlotWidget):
@@ -206,7 +223,8 @@ class FrameImage(pg.PlotWidget):
         self.showGrid(x=state, y=state, alpha=0.3)
 
     def set_lines(self, x, y):
-        self.v_line.setValue(x); self.h_line.setValue(y)
+        self.v_line.setValue(x)
+        self.h_line.setValue(y)
         self.getViewBox().update()
 
     def emit_selection(self):
@@ -218,7 +236,8 @@ class FrameImage(pg.PlotWidget):
             pos = event.scenePos()
             if self.image_item.sceneBoundingRect().contains(pos):
                 pt = self.image_item.mapFromScene(pos)
-                self.set_lines(pt.x(), pt.y()); self.emit_selection()
+                self.set_lines(pt.x(), pt.y())
+                self.emit_selection()
 
 class FrameDisplay(qw.QWidget):
     userSelectionChanged = qc.pyqtSignal(int, int)
@@ -242,9 +261,43 @@ class FrameDisplay(qw.QWidget):
         layout.addWidget(self.f_time, 1, 1)
         layout.setColumnStretch(1, 10)
         layout.setRowStretch(0, 10)
-        self.f_time.setXLink(self.f_image); self.f_chan.setYLink(self.f_image)
+        self.f_time.setXLink(self.f_image)
+        self.f_chan.setYLink(self.f_image)
         self.f_image.selectionChanged.connect(self._on_internal_change)
         self.f_image.getViewBox().sigRangeChanged.connect(self.update_hist_region)
+
+    def enterEvent(self, event):
+        "Automatically grab focus when mouse enters, enabling arrow key nudging."
+        self.setFocus()
+        super().enterEvent(event)
+
+    def keyPressEvent(self, event):
+        "Handle arrow key nudging."
+        step = 1
+        if event.modifiers() & qc.Qt.KeyboardModifier.ShiftModifier:
+            step = 10
+            
+        cur_x = self.f_image.v_line.value()
+        cur_y = self.f_image.h_line.value()
+
+        if event.key() == qc.Qt.Key.Key_Left:
+            self.update_v_line_from_user(cur_x - step)
+        elif event.key() == qc.Qt.Key.Key_Right:
+            self.update_v_line_from_user(cur_x + step)
+        elif event.key() == qc.Qt.Key.Key_Down:
+            self.update_h_line_from_user(cur_y - step)
+        elif event.key() == qc.Qt.Key.Key_Up:
+            self.update_h_line_from_user(cur_y + step)
+        else:
+            super().keyPressEvent(event)
+
+    def update_v_line_from_user(self, x):
+        self.f_image.v_line.setValue(x)
+        self.f_image.emit_selection()
+
+    def update_h_line_from_user(self, y):
+        self.f_image.h_line.setValue(y)
+        self.f_image.emit_selection()
 
     @qc.pyqtSlot(np.ndarray)
     def updateData(self, samples=None, channels=None, tickinfo=None):
@@ -255,7 +308,8 @@ class FrameDisplay(qw.QWidget):
         self._apply_current_state()
 
     def _apply_current_state(self):
-        if self.original_data is None: return
+        if self.original_data is None:
+            return
         data = self.baseline_data if self._rebaseline_active else self.original_data
         self.f_image.image_item.setImage(data, autoLevels=False)
         self.f_image.emit_selection()
@@ -315,10 +369,13 @@ class FrameDisplay(qw.QWidget):
                                               getattr(self, "current_tickinfo", None))
             self.f_time.update_trace(data[r, :])
             self.f_chan.update_trace(data[:, c])
-        if not self._is_syncing: self.userSelectionChanged.emit(col, row)
+        if not self._is_syncing:
+            self.userSelectionChanged.emit(col, row)
 
     def set_crosshair(self, x, y):
-        self.f_image.set_lines(x, y); self._on_internal_change(x, y)
+        self.f_image.set_lines(x, y)
+        self._on_internal_change(x, y)
+
 
 # --- Main Window ---
 
@@ -331,15 +388,19 @@ class MainWindow(qw.QMainWindow):
         self.displays = []
         self.shapes = [(800, 1500), (800, 1500), (960, 1500)]
 
-        container = qw.QWidget(); self.setCentralWidget(container)
+        container = qw.QWidget()
+        self.setCentralWidget(container)
         self.main_layout = qw.QVBoxLayout(container)
         for i in range(3):
             disp = FrameDisplay()
-            self.main_layout.addWidget(disp); self.displays.append(disp)
-            if i > 0: disp.f_image.setXLink(self.displays[0].f_image)
+            self.main_layout.addWidget(disp)
+            self.displays.append(disp)
+            if i > 0:
+                disp.f_image.setXLink(self.displays[0].f_image)
             disp.userSelectionChanged.connect(self.on_global_sync_request)
 
-        self.status_bar = qw.QStatusBar(); self.setStatusBar(self.status_bar)
+        self.status_bar = qw.QStatusBar()
+        self.setStatusBar(self.status_bar)
         self.init_menus_and_toolbar()
         self.set_cmap('viridis')
         
@@ -388,14 +449,16 @@ class MainWindow(qw.QMainWindow):
         toolbar.addWidget(self.next_btn)
         toolbar.addSeparator()
         toolbar.addWidget(qw.QLabel(" Jump: "))
-        self.idx_input = qw.QLineEdit(); self.idx_input.setFixedWidth(60)
+        self.idx_input = qw.QLineEdit()
+        self.idx_input.setFixedWidth(60)
         self.idx_input.setValidator(qg.QIntValidator(0, 999999))
         self.idx_input.returnPressed.connect(self.on_jump_requested)
         toolbar.addWidget(self.idx_input)
 
     def open_file_dialog(self):
         files, _ = qw.QFileDialog.getOpenFileNames(self, "Open Data Files", "", "Numpy Zipped (*.npz)")
-        if files: self.load_file_source(files)
+        if files:
+            self.load_file_source(files)
 
     def load_file_source(self, filenames):
         self.current_source = FileDataSource(filenames)
@@ -484,12 +547,15 @@ class MainWindow(qw.QMainWindow):
     def on_global_sync_request(self, col, row):
         src = self.sender()
         for d in self.displays:
-            if d != src:
+            if d == src:
                 d._is_syncing = True
                 d.set_crosshair(col, row)
                 d._is_syncing = False
 
 def main():
+    qw.QApplication.setApplicationName("cueteepeesee")
+    qw.QApplication.setOrganizationName("teepeesee")
+
     app = qw.QApplication(sys.argv)
     files = sys.argv[1:] if len(sys.argv) > 1 else None
     window = MainWindow(initial_files=files)

@@ -31,4 +31,5 @@ Possible future improvements:
     - 1D plots is no problem
     - COLZ + BOX for image?
 - [ ] File loader for FR data
-        
+- [ ] Auto reload if file changes.
+  
