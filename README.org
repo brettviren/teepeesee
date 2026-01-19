@@ -1,35 +1,10 @@
 #+title: teepeesee - a display of Wire-Cell frame files
 
-This provides some display GUIs for LArTPC images as written by Wire-Cell
-Toolkit.
 
 Usage:
 
 #+begin_example
 $ uv tool install git+https://github.com/brettviren/teepeesee
-$ teepeesee display frame-file.npz
-$ cueteepeesee frame-file.npz [...]
+$ qtpc frame-file.npz [...]
 #+end_example
 
-Zoom, select color scale, apply data transforms.
-
-The initial display was based on Matplotlib.
-
-[[./teepeesee.png]]
-
-It is a bit slow and the GUI was rudimentary so a Qt based one was made with more UI features, better zooming, a lot faster for some thing (but still slower than I'd like for others).  It also adds multi-file event navigation and includes a "no file" random demo data.
-
-[[./cueteepeesee.png]]
-
-Possible future improvements:
-
-- [ ] Save / restore zoom / pick state.
-- [ ] Refactor to reduce signal/slot spaghetti.
-- [ ] Handle different data tiers in input.
-  - [ ] Set "tag(s)" for selecting input.
-  - [ ] Show multiple frames simultaneously
-    - 1D plots is no problem
-    - COLZ + BOX for image?
-- [ ] File loader for FR data
-- [ ] Auto reload if file changes.
-  
