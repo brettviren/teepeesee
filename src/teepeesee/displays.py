@@ -2,6 +2,7 @@ from qtpy import QtCore as qc
 from qtpy import QtWidgets as qw
 import pyqtgraph as pg
 import numpy as np
+from . import opers
 
 class FrameTime(pg.PlotWidget):
 
@@ -142,13 +143,11 @@ class FrameDisplay(qw.QWidget):
     userSelectionChanged = qc.Signal(int, int)
     def __init__(self):
         super().__init__()
-        self.original_data = None
-        self.baseline_data = None
-        self.multi_source_data = []  # List of data arrays for RGB multi mode
-        self.multi_baseline_data = []  # List of baseline arrays for RGB multi mode
-        self._rgb_multi_mode = False
+        self.source_data = []  # List of source data arrays (even if single source)
+        self.pipeline = []  # List of operation instances to apply
+        self.display_data = []  # Result of applying pipeline to source_data
+        self._rgb_multi_mode = False  # Whether to combine sources into RGB composite
         self._is_syncing = False
-        self._rebaseline_active = False
         self._user_has_zoomed = False
         self._programmatic_range_change = False
         layout = qw.QGridLayout(self)
@@ -204,47 +203,87 @@ class FrameDisplay(qw.QWidget):
         self.f_image.h_line.setValue(y)
         self.f_image.emit_selection()
 
+    def add_operation(self, operation):
+        """Add an operation to the pipeline."""
+        self.pipeline.append(operation)
+        self._apply_pipeline()
+
+    def remove_operation(self, operation_name):
+        """Remove operation(s) by class name from the pipeline.
+
+        Args:
+            operation_name: String name of the operation class (e.g., 'Rebaseline')
+        """
+        self.pipeline = [op for op in self.pipeline if op.__class__.__name__ != operation_name]
+        self._apply_pipeline()
+
+    def has_operation(self, operation_name):
+        """Check if an operation exists in the pipeline.
+
+        Args:
+            operation_name: String name of the operation class (e.g., 'Rebaseline')
+
+        Returns:
+            True if operation exists in pipeline, False otherwise
+        """
+        return any(op.__class__.__name__ == operation_name for op in self.pipeline)
+
+    def _apply_pipeline(self):
+        """Apply all operations in pipeline to source data and update display."""
+        if not self.source_data:
+            self.display_data = []
+            return
+
+        # Start with source data
+        self.display_data = self.source_data.copy()
+
+        # Apply each operation in sequence
+        for operation in self.pipeline:
+            self.display_data = operation(self.display_data)
+
+        # Update the display with transformed data
+        self._update_display()
+
     @qc.Slot(np.ndarray)
     def updateData(self, samples=None, channels=None, tickinfo=None):
+        """Update with single source data."""
         self.current_channels = channels
         self.current_tickinfo = tickinfo
-        self.original_data = samples
-        self.baseline_data = samples - np.median(samples, axis=1, keepdims=True)
-        self._apply_current_state()
+        self.source_data = [samples] if samples is not None else []
+        self._apply_pipeline()
 
     def set_rgb_multi_mode(self, enabled):
         """Enable or disable RGB multi mode."""
         self._rgb_multi_mode = enabled
-        self._apply_current_state()
+        # Add/remove UnitNorm operation based on RGB multi mode
+        if enabled and not self.has_operation('UnitNorm'):
+            self.add_operation(opers.UnitNorm())
+        elif not enabled and self.has_operation('UnitNorm'):
+            self.remove_operation('UnitNorm')
 
     def updateMultiData(self, data_list):
         """Update with data from multiple sources for RGB multi mode.
 
         data_list: list of dicts with 'samples', 'channels', 'tickinfo' keys
         """
-        self.multi_source_data = []
-        self.multi_baseline_data = []
+        self.source_data = []
 
         for data_dict in data_list[:3]:  # Max 3 sources
             samples = data_dict.get('samples')
             if samples is not None:
-                self.multi_source_data.append(samples)
-                baseline = samples - np.median(samples, axis=1, keepdims=True)
-                self.multi_baseline_data.append(baseline)
+                self.source_data.append(samples)
 
         # Use first source's metadata for display
         if data_list:
             self.current_channels = data_list[0].get('channels')
             self.current_tickinfo = data_list[0].get('tickinfo')
 
-        self._apply_current_state()
+        self._apply_pipeline()
 
     def clear(self):
         """Clear the display, showing no data."""
-        self.original_data = None
-        self.baseline_data = None
-        self.multi_source_data = []
-        self.multi_baseline_data = []
+        self.source_data = []
+        self.display_data = []
         self.current_channels = None
         self.current_tickinfo = None
         self.f_image.image_item.clear()
@@ -252,15 +291,15 @@ class FrameDisplay(qw.QWidget):
         self.f_chan.clear()
 
     def _create_rgb_composite(self):
-        """Create RGB composite image from multiple sources."""
-        if not self.multi_source_data:
+        """Create RGB composite image from multiple sources.
+
+        Assumes display_data contains normalized [0, 1] data if UnitNorm is in pipeline.
+        """
+        if not self.display_data:
             return None
 
-        # Get data list (rebaseline if active)
-        data_list = self.multi_baseline_data if self._rebaseline_active else self.multi_source_data
-
         # Get the shape from first source
-        h, w = data_list[0].shape
+        h, w = self.display_data[0].shape
 
         # Create RGB image (height, width, 3)
         rgb_image = np.zeros((h, w, 3), dtype=np.float32)
@@ -269,30 +308,23 @@ class FrameDisplay(qw.QWidget):
         # Single source: Red only
         # Two sources: Red and Green
         # Three+ sources: Red, Green, Blue
-        for i, data in enumerate(data_list[:3]):
-            # Normalize to [0, 1]
-            data_min, data_max = np.nanmin(data), np.nanmax(data)
-            if data_max > data_min:
-                normalized = (data - data_min) / (data_max - data_min)
-            else:
-                normalized = np.zeros_like(data)
-
-            rgb_image[:, :, i] = normalized
+        for i, data in enumerate(self.display_data[:3]):
+            rgb_image[:, :, i] = data
 
         return rgb_image
 
-    def _apply_current_state(self):
-        if self._rgb_multi_mode and self.multi_source_data:
-            # RGB multi mode
+    def _update_display(self):
+        """Update the display with transformed data from the pipeline."""
+        if self._rgb_multi_mode and len(self.display_data) > 0:
+            # RGB multi mode: combine multiple sources into RGB composite
             rgb_image = self._create_rgb_composite()
             if rgb_image is not None:
                 self.f_image.image_item.setImage(rgb_image, autoLevels=False)
                 self.f_image.emit_selection()
                 # Histogram doesn't apply in RGB mode
-        elif self.original_data is not None:
-            # Normal single-source mode
-            data = self.baseline_data if self._rebaseline_active else self.original_data
-            self.f_image.image_item.setImage(data, autoLevels=False)
+        elif len(self.display_data) > 0:
+            # Normal single-source mode: display first source
+            self.f_image.image_item.setImage(self.display_data[0], autoLevels=False)
             self.f_image.emit_selection()
             self.update_hist_region()
 
@@ -362,19 +394,18 @@ class FrameDisplay(qw.QWidget):
     def _on_internal_change(self, col, row):
         data = self.f_image.image_item.image
         if data is not None:
-            if self._rgb_multi_mode and self.multi_source_data:
+            if self._rgb_multi_mode and len(self.display_data) > 0:
                 # RGB multi mode: extract slices from individual sources
-                data_list = self.multi_baseline_data if self._rebaseline_active else self.multi_source_data
-                h, w = data_list[0].shape
+                h, w = self.display_data[0].shape
                 c, r = int(np.clip(col, 0, w - 1)), int(np.clip(row, 0, h - 1))
 
                 # Update info box with first source's value
-                self.f_image.info_box.update_info(c, r, data_list[0][r, c],
+                self.f_image.info_box.update_info(c, r, self.display_data[0][r, c],
                                                   getattr(self, "current_tickinfo", None))
 
                 # Extract slices from all sources for 1D plots
-                time_slices = [d[r, :] for d in data_list]
-                chan_slices = [d[:, c] for d in data_list]
+                time_slices = [d[r, :] for d in self.display_data]
+                chan_slices = [d[:, c] for d in self.display_data]
 
                 self.f_time.update_multi_trace(time_slices)
                 self.f_chan.update_multi_trace(chan_slices)

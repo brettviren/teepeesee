@@ -5,6 +5,7 @@ from .displays import FrameDisplay
 from .sources.file import FileSource
 from .sources.random import RandomDataSource
 from .sources.base import SourceManager
+from . import opers
 
 SEISMIC_STOPS = {
     'ticks': [(0.0, (0, 0, 255, 255)),
@@ -222,7 +223,7 @@ class MainWindow(qw.QMainWindow):
 
     @qc.Slot(list)
     def distribute_data(self, data):
-        is_initial_load = all(d.original_data is None for d in self.displays)
+        is_initial_load = all(len(d.source_data) == 0 for d in self.displays)
 
         # Check if we're in RGB Multi mode
         rgb_multi_mode = any(d._rgb_multi_mode for d in self.displays)
@@ -333,10 +334,13 @@ class MainWindow(qw.QMainWindow):
     def toggle_grids(self, s):
         [d.f_image.toggle_grid(s) for d in self.displays]
 
-    def toggle_baselines(self, s): 
+    def toggle_baselines(self, s):
+        """Toggle baseline subtraction for all displays."""
         for d in self.displays:
-            d._rebaseline_active = s
-            d._apply_current_state()
+            if s and not d.has_operation('Rebaseline'):
+                d.add_operation(opers.Rebaseline())
+            elif not s and d.has_operation('Rebaseline'):
+                d.remove_operation('Rebaseline')
 
     def on_global_sync_request(self, col, row):
         src = self.sender()
