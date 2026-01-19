@@ -8,24 +8,76 @@ class FrameTime(pg.PlotWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(80)
-        self.curve = self.plot(pen='y', stepMode="center")
+        self.curves = []  # List of curves for multi-source display
 
     def update_trace(self, data_slice):
+        """Update with single data slice (legacy mode)."""
+        # Clear existing curves and create single yellow curve
+        self.clear()
+        self.curves = [self.plot(pen='y', stepMode="center")]
         bins = np.arange(len(data_slice) + 1)
-        # print(f'FrameTime: {bins.shape=} {data_slice.shape=}')
-        self.curve.setData(x=bins, y=data_slice)
+        self.curves[0].setData(x=bins, y=data_slice)
+
+    def update_multi_trace(self, data_slices):
+        """Update with multiple data slices (RGB Multi mode).
+
+        data_slices: list of numpy arrays, one per source
+        """
+        colors = ['r', 'g', 'b']  # Red, Green, Blue
+        self.clear()
+        self.curves = []
+
+        for i, data_slice in enumerate(data_slices[:3]):  # Max 3 sources
+            if data_slice is not None:
+                color = colors[i] if len(data_slices) > 1 else 'r'  # Single source uses red
+                curve = self.plot(pen=color, stepMode="center")
+                bins = np.arange(len(data_slice) + 1)
+                curve.setData(x=bins, y=data_slice)
+                self.curves.append(curve)
+
+    def clear(self):
+        """Clear all plots."""
+        for item in self.items():
+            self.removeItem(item)
+        self.curves = []
 
 
 class FrameChan(pg.PlotWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(100)
-        self.curve = self.plot(pen='c', stepMode="center")
+        self.curves = []  # List of curves for multi-source display
 
     def update_trace(self, data_slice):
+        """Update with single data slice (legacy mode)."""
+        # Clear existing curves and create single cyan curve
+        self.clear()
+        self.curves = [self.plot(pen='c', stepMode="center")]
         bins = np.arange(len(data_slice)-1)
-        # print(f'FrameChan: {data_slice.shape=} {bins.shape=}')
-        self.curve.setData(x=data_slice, y=bins)
+        self.curves[0].setData(x=data_slice, y=bins)
+
+    def update_multi_trace(self, data_slices):
+        """Update with multiple data slices (RGB Multi mode).
+
+        data_slices: list of numpy arrays, one per source
+        """
+        colors = ['r', 'g', 'b']  # Red, Green, Blue
+        self.clear()
+        self.curves = []
+
+        for i, data_slice in enumerate(data_slices[:3]):  # Max 3 sources
+            if data_slice is not None:
+                color = colors[i] if len(data_slices) > 1 else 'r'  # Single source uses red
+                curve = self.plot(pen=color, stepMode="center")
+                bins = np.arange(len(data_slice)-1)
+                curve.setData(x=data_slice, y=bins)
+                self.curves.append(curve)
+
+    def clear(self):
+        """Clear all plots."""
+        for item in self.items():
+            self.removeItem(item)
+        self.curves = []
 
 
 class FrameInfo(qw.QLabel):
@@ -92,6 +144,9 @@ class FrameDisplay(qw.QWidget):
         super().__init__()
         self.original_data = None
         self.baseline_data = None
+        self.multi_source_data = []  # List of data arrays for RGB multi mode
+        self.multi_baseline_data = []  # List of baseline arrays for RGB multi mode
+        self._rgb_multi_mode = False
         self._is_syncing = False
         self._rebaseline_active = False
         self._user_has_zoomed = False
@@ -157,18 +212,103 @@ class FrameDisplay(qw.QWidget):
         self.baseline_data = samples - np.median(samples, axis=1, keepdims=True)
         self._apply_current_state()
 
+    def set_rgb_multi_mode(self, enabled):
+        """Enable or disable RGB multi mode."""
+        self._rgb_multi_mode = enabled
+        self._apply_current_state()
+
+    def updateMultiData(self, data_list):
+        """Update with data from multiple sources for RGB multi mode.
+
+        data_list: list of dicts with 'samples', 'channels', 'tickinfo' keys
+        """
+        self.multi_source_data = []
+        self.multi_baseline_data = []
+
+        for data_dict in data_list[:3]:  # Max 3 sources
+            samples = data_dict.get('samples')
+            if samples is not None:
+                self.multi_source_data.append(samples)
+                baseline = samples - np.median(samples, axis=1, keepdims=True)
+                self.multi_baseline_data.append(baseline)
+
+        # Use first source's metadata for display
+        if data_list:
+            self.current_channels = data_list[0].get('channels')
+            self.current_tickinfo = data_list[0].get('tickinfo')
+
+        self._apply_current_state()
+
+    def clear(self):
+        """Clear the display, showing no data."""
+        self.original_data = None
+        self.baseline_data = None
+        self.multi_source_data = []
+        self.multi_baseline_data = []
+        self.current_channels = None
+        self.current_tickinfo = None
+        self.f_image.image_item.clear()
+        self.f_time.clear()
+        self.f_chan.clear()
+
+    def _create_rgb_composite(self):
+        """Create RGB composite image from multiple sources."""
+        if not self.multi_source_data:
+            return None
+
+        # Get data list (rebaseline if active)
+        data_list = self.multi_baseline_data if self._rebaseline_active else self.multi_source_data
+
+        # Get the shape from first source
+        h, w = data_list[0].shape
+
+        # Create RGB image (height, width, 3)
+        rgb_image = np.zeros((h, w, 3), dtype=np.float32)
+
+        # Assign sources to R, G, B channels
+        # Single source: Red only
+        # Two sources: Red and Green
+        # Three+ sources: Red, Green, Blue
+        for i, data in enumerate(data_list[:3]):
+            # Normalize to [0, 1]
+            data_min, data_max = np.nanmin(data), np.nanmax(data)
+            if data_max > data_min:
+                normalized = (data - data_min) / (data_max - data_min)
+            else:
+                normalized = np.zeros_like(data)
+
+            rgb_image[:, :, i] = normalized
+
+        return rgb_image
+
     def _apply_current_state(self):
-        if self.original_data is None:
-            return
-        data = self.baseline_data if self._rebaseline_active else self.original_data
-        self.f_image.image_item.setImage(data, autoLevels=False)
-        self.f_image.emit_selection()
-        self.update_hist_region()
+        if self._rgb_multi_mode and self.multi_source_data:
+            # RGB multi mode
+            rgb_image = self._create_rgb_composite()
+            if rgb_image is not None:
+                self.f_image.image_item.setImage(rgb_image, autoLevels=False)
+                self.f_image.emit_selection()
+                # Histogram doesn't apply in RGB mode
+        elif self.original_data is not None:
+            # Normal single-source mode
+            data = self.baseline_data if self._rebaseline_active else self.original_data
+            self.f_image.image_item.setImage(data, autoLevels=False)
+            self.f_image.emit_selection()
+            self.update_hist_region()
 
     def auto_contrast(self):
+        # Skip auto contrast in RGB Multi mode (image is already normalized)
+        if self._rgb_multi_mode:
+            return
+
         data = self.f_image.image_item.image
         if data is None:
             return
+
+        # Skip if data is 3D (RGB image)
+        if len(data.shape) == 3:
+            return
+
         vb = self.f_image.getViewBox()
         rect = vb.viewRect()
         h, w = data.shape
@@ -185,9 +325,18 @@ class FrameDisplay(qw.QWidget):
         self.f_hist.setLevels(mn, mx)
 
     def update_hist_region(self):
+        # Skip histogram update in RGB Multi mode
+        if self._rgb_multi_mode:
+            return
+
         data = self.f_image.image_item.image
         if data is None:
             return
+
+        # Skip if data is 3D (RGB image)
+        if len(data.shape) == 3:
+            return
+
         vb = self.f_image.getViewBox()
         rect = vb.viewRect()
         h, w = data.shape
@@ -213,12 +362,30 @@ class FrameDisplay(qw.QWidget):
     def _on_internal_change(self, col, row):
         data = self.f_image.image_item.image
         if data is not None:
-            h, w = data.shape
-            c, r = int(np.clip(col, 0, w - 1)), int(np.clip(row, 0, h - 1))
-            self.f_image.info_box.update_info(c, r, data[r, c],
-                                              getattr(self, "current_tickinfo", None))
-            self.f_time.update_trace(data[r, :])
-            self.f_chan.update_trace(data[:, c])
+            if self._rgb_multi_mode and self.multi_source_data:
+                # RGB multi mode: extract slices from individual sources
+                data_list = self.multi_baseline_data if self._rebaseline_active else self.multi_source_data
+                h, w = data_list[0].shape
+                c, r = int(np.clip(col, 0, w - 1)), int(np.clip(row, 0, h - 1))
+
+                # Update info box with first source's value
+                self.f_image.info_box.update_info(c, r, data_list[0][r, c],
+                                                  getattr(self, "current_tickinfo", None))
+
+                # Extract slices from all sources for 1D plots
+                time_slices = [d[r, :] for d in data_list]
+                chan_slices = [d[:, c] for d in data_list]
+
+                self.f_time.update_multi_trace(time_slices)
+                self.f_chan.update_multi_trace(chan_slices)
+            else:
+                # Normal single-source mode
+                h, w = data.shape
+                c, r = int(np.clip(col, 0, w - 1)), int(np.clip(row, 0, h - 1))
+                self.f_image.info_box.update_info(c, r, data[r, c],
+                                                  getattr(self, "current_tickinfo", None))
+                self.f_time.update_trace(data[r, :])
+                self.f_chan.update_trace(data[:, c])
         if not self._is_syncing:
             self.userSelectionChanged.emit(col, row)
 

@@ -3,12 +3,15 @@ import numpy as np
 from .base import DataSource
 
 class RandomDataSource(DataSource):
-    def __init__(self, shapes):
-        super().__init__()
-        self.shapes = shapes 
+    def __init__(self, shapes, index=0, name=None):
+        super().__init__(index, name)
+        self.shapes = shapes
 
     @property
-    def name(self): return f"random_{self._index}"
+    def name(self):
+        if self._name:
+            return self._name
+        return f"random_{self._index}"
 
     def _generate(self):
         outputs = []

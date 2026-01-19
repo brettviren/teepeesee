@@ -89,7 +89,8 @@ The main Qt application has been modularized:
 
 - **`cli.py`**: Click-based CLI entry point for `qtpc` command, handles argument parsing
 - **`gui.py`**: MainWindow and GUI construction
-- **`cueteepeesee.py`**: Legacy entry point and data source classes (being refactored)
+- **`displays.py`**: Data display widgets
+- **`sources/*.py`**: Classes for data sources.
 
 ### Detector Geometries
 
@@ -109,7 +110,7 @@ This project uses **beads** (`bd`) for issue tracking. See `AGENTS.md` for workf
 bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress
-bd update <id> --description "Comment" # Add comment 
+bd comments add <id> "The comment" # To add a comment 
 bd close <id>
 bd sync               # Sync with git
 ```

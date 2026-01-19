@@ -8,10 +8,12 @@ from .tensor import TensorFileSource
 
 class FileSource(qc.QObject):
     dataReady = qc.Signal(list)
-    
-    def __init__(self, filenames):
+
+    def __init__(self, filenames, index=0, name=None):
         super().__init__()
         self.files = filenames
+        self._index = index
+        self._name = name
         self._delegate = None
         self._detect_and_create_delegate()
     
@@ -34,10 +36,10 @@ class FileSource(qc.QObject):
                 has_tickinfo_keys = any(k.startswith('tickinfo_') for k in keys)
                 
                 if has_frame_keys and has_channels_keys and has_tickinfo_keys:
-                    self._delegate = FrameFileSource(self.files)
+                    self._delegate = FrameFileSource(self.files, self._index, self._name)
                 else:
-                    self._delegate = TensorFileSource(self.files)
-                
+                    self._delegate = TensorFileSource(self.files, self._index, self._name)
+
                 self._delegate.dataReady.connect(self.dataReady.emit)
                 
         except Exception as e:
@@ -45,8 +47,12 @@ class FileSource(qc.QObject):
     
     @property
     def name(self):
+        if self._name:
+            return self._name
         if self._delegate:
             return self._delegate.name
+        if self.files:
+            return os.path.basename(self.files[0])
         return "No data"
     
     @property

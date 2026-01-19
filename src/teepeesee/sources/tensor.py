@@ -7,12 +7,13 @@ import json
 class TensorFileSource(qc.QObject):
     dataReady = qc.Signal(list)
 
-    def __init__(self, filenames):
+    def __init__(self, filenames, index=0, name=None):
         super().__init__()
         self.files = filenames
         self.inventory = []  # List of (filepath, index) tuples
-        self._index = 0
+        self._index = index
         self._layer = 0
+        self._name = name
         self._parse_files()
         print(f'TensorFileSource: {self.name}')
     
@@ -41,7 +42,11 @@ class TensorFileSource(qc.QObject):
 
     @property
     def name(self):
+        if self._name:
+            return self._name
         if not self.inventory:
+            if self.files:
+                return os.path.basename(self.files[0])
             return "No data"
         fpath, idx = self.inventory[self._index]
         return f"{os.path.basename(fpath)} | tensor [{idx}]"
