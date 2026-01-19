@@ -394,6 +394,13 @@ class RandomDataSource(DataSource):
         self._index = max(0, idx)
         self._generate()
 
+    @qc.pyqtSlot(int)
+    def setLayer(self, layer):
+        """Set the layer index. For RandomDataSource, this affects the random seed."""
+        if self._layer != layer:
+            self._layer = layer
+            self._generate()
+
 
 class FrameTime(pg.PlotWidget):
 
@@ -454,6 +461,9 @@ class FrameImage(pg.PlotWidget):
         self.v_line.sigDragged.connect(self.emit_selection)
         self.h_line.sigDragged.connect(self.emit_selection)
         self.scene().sigMouseClicked.connect(self.handle_click)
+        # Set initial range to reasonable values instead of pyqtgraph's default (-1, 1)
+        # This will be overridden by reset_to_default_view() once data is loaded
+        self.getViewBox().setRange(xRange=(0, 1000), yRange=(0, 1000), padding=0)
 
     def toggle_grid(self, state):
         self.showGrid(x=state, y=state, alpha=0.3)
