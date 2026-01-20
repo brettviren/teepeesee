@@ -8,3 +8,11 @@ $ uv tool install git+https://github.com/brettviren/teepeesee
 $ qtpc frame-file.npz [...]
 #+end_example
 
+* Screenshots
+
+** RGB Multi
+
+
+[[file:docs/qtpc-rgb-multi.png]]
+
+This Screenshot shows a special "colormap" called "RGB Multi" which shows multiple data frames each occupying one of red, green or blue primary colors.  This shot shows the "looseLF" input to DNNROI in red and "true" depo-flux-splat in green.  The leading red and trailing green fringes indicate some slight timing offset.  The bottom shows only truth as DNNROI is not instrumented for collection planes.
